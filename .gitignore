@@ -1,0 +1,37 @@
+# IDE / Bmad
+.kilocodemodes
+.bmad-core
+
+# Dependencies
+node_modules
+web-bundles
+backend/.venv
+
+# Build & Cache
+backend/.pytest_cache
+backend/__pycache__
+__pycache__
+
+# Data & Secrets
+*.sqlite
+backend/.env
+.env
+
+# Downloaded files
+backend/Downloads/
+
+# logs
+*.log
+
+# Environment variables
+.env
+
+# Claude files
+.claude/
+CLAUDE.md
+
+# Temporary files
+secrets-to-remove.txt
+
+# Documentation with sensitive info
+docs/AIAPI.md

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      context: ./web
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  api:
+    build: 
+      context: ./backend
+    ports:
+      - "3001:3001"
+    restart: unless-stopped
+    networks:
+      - app-network
+    volumes:
+      - ./database.sqlite:/usr/src/app/database.sqlite
+    env_file:
+      - .env
+networks:
+  app-network:
+    driver: bridge
