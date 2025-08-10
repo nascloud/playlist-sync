@@ -4,6 +4,7 @@ import {
     Route,
     Navigate,
     useLocation,
+    useNavigate,
     Outlet,
 } from 'react-router-dom';
 import DashboardPage from './pages/DashboardPage';
@@ -14,6 +15,7 @@ import LoginPage from './pages/LoginPage';
 import Header from './components/Header';
 import { useState, useEffect } from 'react';
 import { getServers } from './lib/api';
+import { Toaster, toast } from 'sonner';
 
 type Page = 'dashboard' | 'logs' | 'settings' | 'downloads';
 
