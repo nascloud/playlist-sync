@@ -85,6 +85,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from fastapi.responses import JSONResponse
+
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     # 放行登录接口和SSE流
@@ -108,9 +110,9 @@ async def auth_middleware(request: Request, call_next):
             payload = security.jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             request.state.user = payload.get("sub")
         except JWTError:
-            return Response("Invalid token", status_code=401)
+            return JSONResponse(status_code=401, content={"detail": "Invalid token"})
     else:
-        return Response("Not authenticated", status_code=401)
+        return JSONResponse(status_code=401, content={"detail": "Not authenticated"})
     
     response = await call_next(request)
     return response

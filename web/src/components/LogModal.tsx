@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Dialog, Transition } from '@headlessui/react';
 import { Fragment } from 'react';
+import { fetchFromApi } from '../lib/api';
 
 interface LogModalProps {
   isOpen: boolean;
@@ -20,12 +21,7 @@ const LogModal: React.FC<LogModalProps> = ({ isOpen, onClose, sessionId }) => {
         setIsLoading(true);
         setError(null);
         try {
-          const response = await fetch(`/api/download/session/${sessionId}/logs`);
-          if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.detail || '获取日志失败');
-          }
-          const data = await response.json();
+          const data = await fetchFromApi(`/download/session/${sessionId}/logs`);
           setLogs(data.logs || '暂无日志内容。');
         } catch (err: any) {
           setError(err.message);

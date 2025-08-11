@@ -43,12 +43,31 @@ export const fetchFromApi = async (path: string, options: RequestInit = {}) => {
     if (response.status === 401) {
         localStorage.removeItem('token');
         window.location.href = '/login';
-        throw new Error('Unauthorized');
+        // 尝试解析错误信息，如果失败则使用默认消息
+        const errorText = await response.text().catch(() => 'Unauthorized');
+        let errorMessage = 'Unauthorized';
+        try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.detail || errorMessage;
+        } catch {
+            // 如果不是JSON格式，直接使用文本
+            errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
     }
 
     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'An unknown error occurred' }));
-        throw new Error(errorData.message || 'API request failed');
+        // 尝试解析错误信息，如果失败则使用默认消息
+        const errorText = await response.text().catch(() => 'An unknown error occurred');
+        let errorMessage = 'API request failed';
+        try {
+            const errorData = JSON.parse(errorText);
+            errorMessage = errorData.detail || errorMessage;
+        } catch {
+            // 如果不是JSON格式，直接使用文本
+            errorMessage = errorText || errorMessage;
+        }
+        throw new Error(errorMessage);
     }
 
     return response.json();
