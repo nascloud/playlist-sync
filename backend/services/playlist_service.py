@@ -1,6 +1,7 @@
 import httpx
 import re
 import json
+import asyncio
 from typing import Dict, List, Optional
 from enum import Enum
 import logging
@@ -138,6 +139,38 @@ class PlaylistService:
                 raise Exception(f'处理网易云歌单时出错: {str(e)}')
     
     @staticmethod
+    async def fetch_qq_song_detail(songmid: str) -> Optional[Dict]:
+        """
+        获取QQ音乐歌曲详情
+        :param songmid: 歌曲MID
+        :return: 包含歌曲详情的字典，如果获取失败则返回None
+        """
+        url = "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg"
+        params = {
+            'songmid': songmid,
+            'platform': 'yqq',
+            'format': 'json'
+        }
+        headers = {
+            'Referer': 'https://y.qq.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(url, headers=headers, params=params, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get('code') == 0 and data.get('data'):
+                    song_data = data['data'][0] if isinstance(data['data'], list) else data['data']
+                    return song_data
+            except Exception as e:
+                logger.warning(f"获取QQ音乐歌曲详情失败 (songmid: {songmid}): {e}")
+        
+        return None
+
+    @staticmethod
     async def fetch_qq_playlist(playlist_id: str) -> Dict:
         """
         获取QQ音乐歌单（增强版，包含歌曲ID）
@@ -194,7 +227,8 @@ class PlaylistService:
                             'artist': singers, 
                             'album': album,
                             'song_id': song_id,  # 新增：包含歌曲ID（组合格式）
-                            'platform': 'qq'  # 新增：标识平台
+                            'platform': 'qq',  # 新增：标识平台
+                            'songmid': songmid  # 保存songmid用于后续详情查询（如果需要）
                         })
                 
                 return {'title': playlist_title, 'tracks': tracks}

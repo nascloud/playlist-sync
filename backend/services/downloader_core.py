@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, Any, List
 
 import requests
+import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 from schemas.download import DownloadQueueItem
 import logging
@@ -62,14 +63,33 @@ class MusicDownloader:
                 log.error("Mutagen无法加载音频文件，可能是不支持的格式或文件已损坏。")
                 raise ValueError("无法加载音频文件，可能是不支持的格式。")
 
-            # 确保元数据是字符串
-            title = song_api_info.get('name', item.title)
-            artist = song_api_info.get('artist', item.artist)
-            album = item.album
+            # 确保元数据是字符串，优先从API信息中获取
+            # 处理可能的列表形式数据
+            def _extract_string_value(value):
+                """从可能的列表或字符串中提取字符串值"""
+                if isinstance(value, list):
+                    if len(value) > 0:
+                        # 确保列表第一个元素不是None或空字符串
+                        first_element = value[0]
+                        if first_element is not None:
+                            str_value = str(first_element)
+                            if str_value.strip():
+                                return str_value
+                    # 如果列表为空或第一个元素无效，返回None以便回退
+                    return None
+                elif value is not None:
+                    str_value = str(value)
+                    if str_value.strip():
+                        return str_value
+                return None
+            
+            title = _extract_string_value(song_api_info.get('name')) or _extract_string_value(item.title) or ""
+            artist = _extract_string_value(song_api_info.get('artist')) or _extract_string_value(item.artist) or ""
+            album = _extract_string_value(song_api_info.get('album')) or _extract_string_value(item.album) or "未知专辑"
 
-            audio['title'] = str(title) if title else ""
-            audio['artist'] = str(artist) if artist else ""
-            audio['album'] = str(album) if album else ""
+            audio['title'] = title
+            audio['artist'] = artist
+            audio['album'] = album
             
             log.info(f"基础元数据待写入: Title='{audio['title']}', Artist='{audio['artist']}', Album='{audio['album']}'")
             audio.save()
@@ -274,6 +294,8 @@ class DownloaderCore:
     def __init__(self):
         self.downloader: Optional[MusicDownloader] = None
         self.download_path: str = "/downloads"
+        # 缓存QQ音乐歌曲详情，避免重复请求
+        self._qq_song_detail_cache: Dict[str, Dict] = {}
 
     def initialize(self, api_key: str, download_path: str):
         """初始化下载器，配置API Key和下载路径。"""
@@ -292,6 +314,92 @@ class DownloaderCore:
             "qqmusic": "qq",
         }
         return mapping.get(platform.lower(), platform)
+
+    async def _fetch_qq_song_detail(self, songmid: str, session_logger: logging.Logger) -> Optional[Dict]:
+        """
+        获取QQ音乐歌曲详情（用于补全缺失信息）
+        :param songmid: 歌曲MID
+        :param session_logger: 日志记录器
+        :return: 包含歌曲详情的字典，如果获取失败则返回None
+        """
+        # 检查缓存
+        if songmid in self._qq_song_detail_cache:
+            session_logger.debug(f"从缓存中获取QQ音乐歌曲详情 (songmid: {songmid})")
+            return self._qq_song_detail_cache[songmid]
+        
+        url = "https://c.y.qq.com/v8/fcg-bin/fcg_play_single_song.fcg"
+        params = {
+            'songmid': songmid,
+            'platform': 'yqq',
+            'format': 'json'
+        }
+        headers = {
+            'Referer': 'https://y.qq.com/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, headers=headers, params=params, timeout=10.0)
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get('code') == 0 and data.get('data'):
+                    song_data = data['data'][0] if isinstance(data['data'], list) else data['data']
+                    # 缓存结果
+                    self._qq_song_detail_cache[songmid] = song_data
+                    session_logger.debug(f"成功获取QQ音乐歌曲详情 (songmid: {songmid})")
+                    return song_data
+                else:
+                    session_logger.warning(f"QQ音乐歌曲详情API返回错误 (songmid: {songmid}, code: {data.get('code')})")
+        except Exception as e:
+            session_logger.warning(f"获取QQ音乐歌曲详情失败 (songmid: {songmid}): {e}")
+        
+        return None
+
+    async def _enrich_track_info(self, item: DownloadQueueItem, session_logger: logging.Logger) -> DownloadQueueItem:
+        """
+        补全歌曲信息（如果缺失）
+        :param item: 下载队列项
+        :param session_logger: 日志记录器
+        :return: 补全后的下载队列项
+        """
+        # 只有当信息缺失时才尝试补全
+        if (not item.album or item.album == '未知专辑') and item.platform == 'qq' and item.song_id:
+            # QQ音乐的song_id格式是 "songid-songmid"
+            parts = item.song_id.split('-', 1)
+            if len(parts) == 2:
+                songmid = parts[1]
+                if songmid:
+                    session_logger.info(f"检测到歌曲 '{item.title}' 缺少专辑信息，尝试从QQ音乐补全...")
+                    detail = await self._fetch_qq_song_detail(songmid, session_logger)
+                    if detail and isinstance(detail, dict):
+                        # 补全专辑信息
+                        album_info = detail.get('album')
+                        if isinstance(album_info, dict) and album_info.get('name'):
+                            # 创建一个新的对象，复制原有属性并更新专辑信息
+                            enriched_item = type(item)(
+                                id=item.id,
+                                session_id=item.session_id,
+                                title=item.title,
+                                artist=item.artist,
+                                album=album_info['name'],  # 补全专辑信息
+                                platform=item.platform,
+                                song_id=item.song_id,
+                                status=item.status,
+                                quality=item.quality,
+                                retry_count=item.retry_count,
+                                error_message=item.error_message,
+                                created_at=item.created_at,
+                                updated_at=item.updated_at
+                            )
+                            session_logger.info(f"成功补全歌曲 '{item.title}' 的专辑信息: {album_info['name']}")
+                            return enriched_item
+                        else:
+                            session_logger.debug(f"歌曲 '{item.title}' 的详情中未找到专辑信息")
+        
+        # 如果不需要补全或补全失败，返回原始项
+        return item
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
     async def _find_song_id(self, item: DownloadQueueItem, session_logger: logging.Logger) -> Tuple[Optional[str], Optional[str]]:
@@ -360,18 +468,21 @@ class DownloaderCore:
         if not self.downloader:
             raise ValueError("下载器未初始化或 API Key 无效。")
 
+        # 补全缺失的歌曲信息
+        enriched_item = await self._enrich_track_info(item, session_logger)
+        
         loop = asyncio.get_running_loop()
-        song_id = item.song_id
-        platform = self._map_platform_name(item.platform) if item.platform else None
+        song_id = enriched_item.song_id
+        platform = self._map_platform_name(enriched_item.platform) if enriched_item.platform else None
 
         # 步骤 1: 如果有现成的 song_id 和 platform，直接尝试下载
         if song_id and platform:
-            session_logger.info(f"步骤 1: 使用提供的歌曲 ID '{song_id}' 和平台 '{platform}' 直接下载 '{item.title}'")
+            session_logger.info(f"步骤 1: 使用提供的歌曲 ID '{song_id}' 和平台 '{platform}' 直接下载 '{enriched_item.title}'")
             try:
                 file_path = await loop.run_in_executor(
                     None,
                     self.downloader.download_song,
-                    item, # 传递完整的 item
+                    enriched_item, # 传递补全信息后的 item
                     song_id,
                     platform,
                     self.download_path,
@@ -388,23 +499,23 @@ class DownloaderCore:
         
         # 步骤 2: 如果没有 song_id 或直接下载失败，则进行搜索
         if not song_id:
-            session_logger.info(f"步骤 2: 查找歌曲 ID for '{item.title}'")
+            session_logger.info(f"步骤 2: 查找歌曲 ID for '{enriched_item.title}'")
             try:
-                song_id, platform = await self._find_song_id(item, session_logger)
+                song_id, platform = await self._find_song_id(enriched_item, session_logger)
                 if not song_id or not platform:
-                    raise APIError(f"未能找到 '{item.title}' 的有效歌曲 ID。")
+                    raise APIError(f"未能找到 '{enriched_item.title}' 的有效歌曲 ID。")
                 session_logger.info(f"步骤 2 完成. 找到歌曲 ID: {song_id}, 平台: {platform}")
             except APIError as e:
-                session_logger.error(f"下载 '{item.title}' 失败，因为无法找到匹配项: {e}")
+                session_logger.error(f"下载 '{enriched_item.title}' 失败，因为无法找到匹配项: {e}")
                 raise e
 
         # 步骤 3: 使用找到的ID进行下载
         try:
-            session_logger.info(f"步骤 3: 提交下载任务 for '{item.title}'")
+            session_logger.info(f"步骤 3: 提交下载任务 for '{enriched_item.title}'")
             file_path = await loop.run_in_executor(
                 None,
                 self.downloader.download_song,
-                item, # 传递完整的 item
+                enriched_item, # 传递补全信息后的 item
                 song_id,
                 platform,
                 self.download_path,
@@ -412,14 +523,14 @@ class DownloaderCore:
                 download_lyrics,
                 session_logger
             )
-            session_logger.info(f"步骤 3 完成. '{item.title}' 的下载任务已成功提交。文件路径: {file_path}")
+            session_logger.info(f"步骤 3 完成. '{enriched_item.title}' 的下载任务已成功提交。文件路径: {file_path}")
             return file_path
         
         except APIError as e:
-            session_logger.error(f"下载 '{item.title}' 失败: {e}")
+            session_logger.error(f"下载 '{enriched_item.title}' 失败: {e}")
             raise e
         except Exception as e:
-            session_logger.error(f"下载 '{item.title}' 时发生未知错误: {e}", exc_info=True)
+            session_logger.error(f"下载 '{enriched_item.title}' 时发生未知错误: {e}", exc_info=True)
             raise APIError(f"未知错误: {e}") from e
 
 # 实例化下载器核心
