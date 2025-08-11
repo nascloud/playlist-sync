@@ -77,6 +77,7 @@ class PlexService:
         except Exception as e:
             return False, f"连接失败: {str(e)}"
 			
+    @classmethod
     async def create_instance(cls, base_url: str, token: str, verify_ssl: bool = True):
         """异步创建PlexService实例"""
         loop = asyncio.get_running_loop()
