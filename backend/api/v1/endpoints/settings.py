@@ -13,7 +13,7 @@ router = APIRouter()
 async def test_server_connection(req: TestConnectionRequest):
     """测试服务器连接"""
     if req.server_type == ServerType.PLEX:
-        success, message = PlexService.test_connection(req.url, req.token)
+        success, message = PlexService.test_connection(req.url, req.token, req.verify_ssl)
         return TestConnectionResponse(success=success, message=message)
     # 为Jellyfin/Emby等其他服务器类型添加逻辑
     raise HTTPException(status_code=400, detail=f"不支持的服务器类型: {req.server_type}")
@@ -32,7 +32,9 @@ async def test_existing_server_connection(server_id: int):
         raise HTTPException(status_code=500, detail="无法获取服务器令牌。")
 
     if server.server_type == ServerType.PLEX:
-        success, message = PlexService.test_connection(server.url, token)
+        # 正确地传递 verify_ssl 参数
+        verify_ssl = getattr(server, 'verify_ssl', True)
+        success, message = PlexService.test_connection(server.url, token, verify_ssl)
         return TestConnectionResponse(success=success, message=message)
     
     raise HTTPException(status_code=400, detail=f"不支持的服务器类型: {server.server_type}")

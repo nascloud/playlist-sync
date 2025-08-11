@@ -37,6 +37,7 @@ Table(
     Column('playlist_url', String, nullable=False),
     Column('platform', String, nullable=False),
     Column('status', String, default='pending'),
+    Column('status_message', Text),
     Column('last_sync_time', DateTime),
     Column('cron_schedule', String, default='0 2 * * *'),
     Column('unmatched_songs', Text),

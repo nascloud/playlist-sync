@@ -31,10 +31,18 @@ class PlaylistService:
                 return url
                 
         elif platform == Platform.QQ:
-            # 匹配 /playlist/(数字) 的模式
-            match = re.search(r'/playlist/(\d+)', url)
-            if match:
-                return match.group(1)
+            # 匹配多种QQ音乐歌单URL格式
+            # 例如: https://y.qq.com/n/ryqq/playlist/9295849532
+            # 或包含 disstid=... 或 id=... 的URL
+            patterns = [
+                r'playlist/(\d+)',
+                r'disstid=(\d+)',
+                r'id=(\d+)',
+            ]
+            for pattern in patterns:
+                match = re.search(pattern, url)
+                if match:
+                    return match.group(1)
             
             # 如果输入是纯数字ID
             if url.isdigit():

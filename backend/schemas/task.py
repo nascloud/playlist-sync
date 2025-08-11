@@ -19,6 +19,7 @@ class TaskInDBBase(TaskBase):
     id: int
     last_sync_time: Optional[str] = None
     status: str = "idle"
+    status_message: Optional[str] = None
     unmatched_songs: Optional[str] = None
     last_sync_total_count: int = 0
     last_sync_matched_count: int = 0

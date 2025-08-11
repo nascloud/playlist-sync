@@ -9,6 +9,11 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_t
 from typing import List, Optional, Callable, Tuple
 import logging
 import re
+import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# 忽略不安全请求的警告 (当 verify=False 时)
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 from thefuzz import fuzz
 import asyncio
 
@@ -40,14 +45,17 @@ class PlexService:
         wait=wait_fixed(2),
         retry=retry_if_exception_type((ConnectionError, PlexApiException))
     )
-    def __init__(self, base_url: str, token: str):
+    def __init__(self, base_url: str, token: str, verify_ssl: bool = True):
         """
         初始化Plex服务 - 注意：这是一个同步方法，将在一个独立的线程中被调用。
         :param base_url: Plex服务器URL
         :param token: Plex认证令牌
+        :param verify_ssl: 是否验证SSL证书
         """
         try:
-            self.server = PlexServer(base_url, token)
+            session = requests.Session()
+            session.verify = verify_ssl
+            self.server = PlexServer(base_url, token, session=session)
             logger.info(f"Plex连接成功: {self.server.friendlyName}")
         except Exception as e:
             logger.error(f"Plex连接失败: {str(e)}")
@@ -59,19 +67,20 @@ class PlexService:
         wait=wait_fixed(2),
         retry=retry_if_exception_type((ConnectionError, PlexApiException))
     )
-    def test_connection(base_url: str, token: str) -> Tuple[bool, str]:
+    def test_connection(base_url: str, token: str, verify_ssl: bool = True) -> Tuple[bool, str]:
         """测试与Plex服务器的连接"""
         try:
-            PlexServer(base_url, token)
+            session = requests.Session()
+            session.verify = verify_ssl
+            PlexServer(base_url, token, session=session)
             return True, "连接成功。"
         except Exception as e:
             return False, f"连接失败: {str(e)}"
 			
-    @classmethod
-    async def create_instance(cls, base_url: str, token: str):
+    async def create_instance(cls, base_url: str, token: str, verify_ssl: bool = True):
         """异步创建PlexService实例"""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, cls, base_url, token)
+        return await loop.run_in_executor(None, cls, base_url, token, verify_ssl)
 
     async def get_music_library(self) -> Optional[MusicSection]:
         """异步获取音乐资料库"""

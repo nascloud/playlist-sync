@@ -36,7 +36,7 @@ class SettingsService:
     def get_all_servers() -> List[Server]:
         def _get_all(conn: sqlite3.Connection) -> List[Server]:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, server_type, url FROM settings')
+            cursor.execute('SELECT id, name, server_type, url, verify_ssl FROM settings')
             servers = cursor.fetchall()
             
             # 如果数据库中没有服务器，并且环境变量中有Plex配置
@@ -49,14 +49,14 @@ class SettingsService:
                     try:
                         encrypted_token = encrypt_token(env_settings.PLEX_TOKEN)
                         cursor.execute(
-                            'INSERT INTO settings (name, server_type, url, token) VALUES (?, ?, ?, ?)',
-                            ('Plex (from env)', 'plex', env_settings.PLEX_URL, encrypted_token)
+                            'INSERT INTO settings (name, server_type, url, token, verify_ssl) VALUES (?, ?, ?, ?, ?)',
+                            ('Plex (from env)', 'plex', env_settings.PLEX_URL, encrypted_token, True)
                         )
                         conn.commit()
                         logger.info("已成功从环境变量中创建并存储 Plex 服务器配置。")
                         
                         # 重新查询以包含新创建的服务器
-                        cursor.execute('SELECT id, name, server_type, url FROM settings')
+                        cursor.execute('SELECT id, name, server_type, url, verify_ssl FROM settings')
                         servers = cursor.fetchall()
                     except Exception as e:
                         logger.error(f"从环境变量创建服务器时出错: {e}", exc_info=True)
@@ -69,7 +69,7 @@ class SettingsService:
     def get_server_by_id(server_id: int) -> Optional[Server]:
         def _get_by_id(conn: sqlite3.Connection, server_id: int) -> Optional[Server]:
             cursor = conn.cursor()
-            cursor.execute('SELECT id, name, server_type, url, token FROM settings WHERE id = ?', (server_id,))
+            cursor.execute('SELECT id, name, server_type, url, token, verify_ssl FROM settings WHERE id = ?', (server_id,))
             server_data = cursor.fetchone()
             if server_data:
                 decrypted_token = decrypt_token(server_data['token'])
@@ -85,13 +85,13 @@ class SettingsService:
             encrypted_token = encrypt_token(server.token)
             cursor = conn.cursor()
             cursor.execute(
-                'INSERT INTO settings (name, server_type, url, token) VALUES (?, ?, ?, ?)',
-                (server.name, server.server_type.value, str(server.url), encrypted_token)
+                'INSERT INTO settings (name, server_type, url, token, verify_ssl) VALUES (?, ?, ?, ?, ?)',
+                (server.name, server.server_type.value, str(server.url), encrypted_token, server.verify_ssl)
             )
             server_id = cursor.lastrowid
             conn.commit()
             # 在同一连接/事务中获取新创建的服务器
-            cursor.execute('SELECT id, name, server_type, url FROM settings WHERE id = ?', (server_id,))
+            cursor.execute('SELECT id, name, server_type, url, verify_ssl FROM settings WHERE id = ?', (server_id,))
             new_server_data = cursor.fetchone()
             return Server(**dict(new_server_data))
         return SettingsService._execute(_add, server)
@@ -114,7 +114,7 @@ class SettingsService:
             cursor.execute(f'UPDATE settings SET {set_clause} WHERE id = ?', tuple(values))
             conn.commit()
             
-            cursor.execute('SELECT id, name, server_type, url, token FROM settings WHERE id = ?', (server_id,))
+            cursor.execute('SELECT id, name, server_type, url, token, verify_ssl FROM settings WHERE id = ?', (server_id,))
             updated_server_data = cursor.fetchone()
             if updated_server_data:
                 decrypted_token = decrypt_token(updated_server_data['token'])

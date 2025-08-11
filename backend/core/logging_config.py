@@ -23,6 +23,12 @@ def setup_logging():
     root_logger.setLevel(logging.INFO)
     
     # 1. 控制台 Handler
+    # 移除旧的 handlers，避免重复添加
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # 显式地为 stdout 设置 UTF-8 编码
+    sys.stdout.reconfigure(encoding='utf-8')
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(log_formatter)
     root_logger.addHandler(console_handler)

@@ -34,11 +34,12 @@ class SyncService:
         server_type = settings['type']
         url = settings['url']
         encrypted_token = settings['token']
+        verify_ssl = settings.get('verify_ssl', True)  # 默认为 True
         
         # 伪代码/未来规划:
         # if server_type == 'plex':
         #     token = await asyncio.to_thread(decrypt_token, encrypted_token)
-        #     self.plex_service = await PlexService.create_instance(url, token)
+        #     self.plex_service = await PlexService.create_instance(url, token, verify_ssl)
         # elif server_type == 'emby':
         #     # self.media_service = await EmbyService.create_instance(...)
         #     raise NotImplementedError("Emby 服务尚未支持。")
@@ -50,7 +51,7 @@ class SyncService:
             raise Exception(f"当前同步任务仅支持Plex服务器，但任务配置的服务器类型为 '{server_type}'。")
 
         token = await asyncio.to_thread(decrypt_token, encrypted_token)
-        self.plex_service = await PlexService.create_instance(url, token)
+        self.plex_service = await PlexService.create_instance(url, token, verify_ssl)
 
     async def preview_playlist(self, playlist_url: str, platform: str):
         """
@@ -116,7 +117,12 @@ class SyncService:
         """
         (异步) 同步播放列表到Plex，并发送实时进度。
         """
-        if log_callback: log_callback('info', f'开始同步任务: {playlist_name}')
+        
+        # 创建一个安全的 log_callback 副本，以防在子函数中被意外修改。
+        # 确保我们总是使用原始的、可调用的回调函数。
+        safe_log_callback = log_callback if callable(log_callback) else None
+
+        if safe_log_callback: safe_log_callback('info', f'开始同步任务: {playlist_name}')
         
         await progress_manager.send_message(task_id, json.dumps({"status": "starting", "message": "同步任务已开始..."}), event="progress")
         
@@ -125,7 +131,7 @@ class SyncService:
             await progress_manager.send_message(task_id, json.dumps({"status": "syncing", "message": "正在初始化..."}), event="progress")
 
             await self._initialize_plex_service(server_id)
-            if log_callback: log_callback('info', '媒体服务器客户端初始化成功。')
+            if safe_log_callback: safe_log_callback('info', '媒体服务器客户端初始化成功。')
             
             music_library = await self.plex_service.get_music_library()
             if not music_library:
@@ -133,7 +139,7 @@ class SyncService:
             
             external_playlist = await self.playlist_service.parse_playlist(playlist_url, platform)
             total_tracks = len(external_playlist['tracks'])
-            if log_callback: log_callback('info', f"成功获取到 \"{external_playlist['title']}\"，共 {total_tracks} 首歌曲。")
+            if safe_log_callback: safe_log_callback('info', f"成功获取到 \"{external_playlist['title']}\"，共 {total_tracks} 首歌曲。")
             
             matched_plex_tracks, unmatched_tracks_info = await self._match_tracks(task_id, external_playlist, music_library)
 
@@ -143,12 +149,12 @@ class SyncService:
                 total=len(external_playlist['tracks']),
                 matched=len(matched_plex_tracks)
             )
-            if log_callback: log_callback('info', f"匹配完成。成功: {len(matched_plex_tracks)}, 失败: {len(unmatched_tracks_info)}")
+            if safe_log_callback: safe_log_callback('info', f"匹配完成。成功: {len(matched_plex_tracks)}, 失败: {len(unmatched_tracks_info)}")
             
             TaskService.update_task_status(task_id, 'importing', '正在导入...')
             await progress_manager.send_message(task_id, json.dumps({"status": "importing", "message": "正在导入..."}), event="progress")
             
-            success = await self.plex_service.create_or_update_playlist(playlist_name, matched_plex_tracks, log_callback)
+            success = await self.plex_service.create_or_update_playlist(playlist_name, tracks=matched_plex_tracks, log_callback=safe_log_callback)
             
             if success:
                 TaskService.update_task_status(task_id, 'success', '同步成功')
@@ -172,9 +178,9 @@ class SyncService:
                 raise Exception("导入失败")
                 
         except Exception as e:
-            logger.error(f"[任务 {task_id}] 同步失败: {str(e)}")
+            logger.error(f"[任务 {task_id}] 同步失败: {e}", exc_info=True)
             error_message = f"任务失败: {str(e)}"
-            if log_callback: log_callback('error', error_message)
+            if safe_log_callback: safe_log_callback('error', error_message)
             TaskService.update_task_status(task_id, 'failed', error_message)
             await progress_manager.send_message(task_id, json.dumps({"status": "failed", "message": error_message}), event="error")
             return False
@@ -185,17 +191,15 @@ class SyncService:
         """ (同步) 根据 server_id 获取服务器设置 """
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT url, token, server_type FROM settings WHERE id = ?", (server_id,))
+        cursor.execute("SELECT url, token, server_type, verify_ssl FROM settings WHERE id = ?", (server_id,))
         row = cursor.fetchone()
         conn.close()
         
         if row:
-            # 伪代码/未来规划:
-            # server_type = row['server_type']
-            # if server_type == 'plex':
-            #     return {'url': row['url'], 'token': row['token'], 'type': 'plex'}
-            # elif server_type == 'emby':
-            #     # return {...}
-            #     pass
-            return {'url': row['url'], 'token': row['token'], 'type': row['server_type']}
+            return {
+                'url': row['url'], 
+                'token': row['token'], 
+                'type': row['server_type'],
+                'verify_ssl': bool(row['verify_ssl'])
+            }
         return None
