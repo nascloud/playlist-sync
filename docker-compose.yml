@@ -1,19 +1,28 @@
 version: '3.8'
 
 services:
-  app:
+  # 后端 API 服务
+  playlist_sync-app:
     build:
       context: .
       dockerfile: Dockerfile
+    container_name: playlist_sync-app
     ports:
       - "3001:3001"
     restart: unless-stopped
     networks:
       - app-network
     volumes:
+      # 挂载数据库文件以实现数据持久化
       - ./database.sqlite:/usr/src/app/database.sqlite
+      # 挂载日志目录
+      - ./backend/logs:/usr/src/app/logs
+      # 挂载下载目录
+      - ./backend/Downloads:/usr/src/app/Downloads
+    # 从 backend 目录下的 .env 文件加载环境变量
+    # 这使得配置与代码分离，并且便于管理密钥
     env_file:
-      - .env
+      - ./backend/.env
 
 networks:
   app-network:
