@@ -1,6 +1,6 @@
 
 import asyncio
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from typing import Any, Optional
 from datetime import datetime
 import logging
@@ -16,7 +16,7 @@ from schemas.download_schemas import (
     SessionStatusResponse
 )
 from services.settings_service import SettingsService
-from services.download_service import download_service
+from services.download_service import get_download_service, DownloadService
 from services.downloader_core import downloader
 from services.download_db_service import download_db_service
 from services.download_queue_manager import download_queue_manager
@@ -64,8 +64,8 @@ async def get_download_settings() -> Any:
     if not settings:
         # 如果数据库中没有设置，返回环境变量中的默认值
         return DownloadSettings(
-            api_key=app_settings.downloader.API_KEY or "",
-            download_path=app_settings.downloader.PATH or "",
+            api_key=app_settings.DOWNLOADER_API_KEY or "",
+            download_path=app_settings.DOWNLOAD_PATH or "",
             last_updated=datetime.now()
         )
     return settings
@@ -98,7 +98,7 @@ async def test_download_connection(request: TestConnectionRequest) -> Any:
         return TestConnectionResponse(success=False, message=f"连接失败: {str(e)}")
 
 @router.post("/all-missing", response_model=DownloadActionResponse)
-async def download_all_missing(request: DownloadAllRequest) -> Any:
+async def download_all_missing(request: DownloadAllRequest, download_service: DownloadService = Depends(get_download_service)) -> Any:
     """一键下载指定任务中所有缺失的歌曲。"""
     try:
         session_id = await download_service.download_all_missing(task_id=request.task_id)
@@ -118,7 +118,7 @@ async def download_all_missing(request: DownloadAllRequest) -> Any:
         raise HTTPException(status_code=500, detail=f"创建批量下载失败: {str(e)}")
 
 @router.post("/single", response_model=DownloadActionResponse)
-async def download_single_song(request: DownloadSingleRequest) -> Any:
+async def download_single_song(request: DownloadSingleRequest, download_service: DownloadService = Depends(get_download_service)) -> Any:
     """下载单个指定的歌曲。"""
     logging.info(
         f"接收到单曲下载请求: task_id={request.task_id}, song_id={request.song_id}, "

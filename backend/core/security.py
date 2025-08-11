@@ -29,7 +29,7 @@ def derive_key(password: str, salt: bytes) -> bytes:
 def encrypt_token(token: str) -> str:
     """加密Plex令牌"""
     salt = b'salt_'
-    key = derive_key(settings.auth.SECRET_KEY, salt)
+    key = derive_key(settings.SECRET_KEY, salt)
     
     # 使用固定IV（与Node.js版本保持一致）
     iv = b'\x00' * 16
@@ -46,7 +46,7 @@ def encrypt_token(token: str) -> str:
 def decrypt_token(encrypted_token: str) -> str:
     """解密Plex令牌"""
     salt = b'salt_'
-    key = derive_key(settings.auth.SECRET_KEY, salt)
+    key = derive_key(settings.SECRET_KEY, salt)
     
     # 使用固定IV（与Node.js版本保持一致）
     iv = b'\x00' * 16
@@ -71,5 +71,5 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, settings.auth.SECRET_KEY, algorithm=settings.auth.ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt

@@ -10,8 +10,10 @@ import logging
 from api.v1.api import api_router
 from api.v1.endpoints import auth
 from core.config import settings
-from utils.scheduler import scheduler
-from services.download_service import download_service
+from utils.scheduler import set_scheduler, TaskScheduler
+from services.download_service import set_download_service, DownloadService, get_download_service
+from services.settings_service import SettingsService
+from services.sync_service import SyncService
 from core.logging_config import setup_logging
 from core import security
 from jose import JWTError
@@ -24,9 +26,9 @@ logger = logging.getLogger(__name__)
 def check_security_prerequisites():
     """检查并确保关键的安全环境变量已设置。"""
     missing_vars = []
-    if not settings.auth.SECRET_KEY:
+    if not settings.SECRET_KEY:
         missing_vars.append("SECRET_KEY")
-    if not settings.auth.APP_PASSWORD:
+    if not settings.APP_PASSWORD:
         missing_vars.append("APP_PASSWORD")
     
     if missing_vars:
@@ -43,11 +45,30 @@ async def lifespan(app: FastAPI):
     # 启动时的初始化代码
     check_security_prerequisites()
     setup_logging()
-    scheduler.start()
-    await download_service.initialize_downloader()
+    
+    # 1. 创建服务实例 (依赖顺序: Download -> Sync -> Scheduler)
+    settings_service = SettingsService()
+    download_service_instance = DownloadService(settings_service=settings_service)
+    sync_service_instance = SyncService(download_service=download_service_instance)
+    scheduler_instance = TaskScheduler(sync_service=sync_service_instance)
+    
+    # 2. 初始化下载器
+    await download_service_instance.initialize_downloader()
+    
+    # 3. 将完全初始化的实例设置为全局单例
+    set_download_service(download_service_instance)
+    set_scheduler(scheduler_instance)
+    
+    # 4. 启动调度器
+    scheduler_instance.start()
+    
+    logger.info("应用启动完成，所有服务已初始化。")
+    
     yield
+    
     # 关闭时的清理代码
-    scheduler.shutdown()
+    scheduler_instance.shutdown()
+    logger.info("应用已关闭。")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -84,7 +105,7 @@ async def auth_middleware(request: Request, call_next):
         
     if token:
         try:
-            payload = security.jwt.decode(token, settings.auth.SECRET_KEY, algorithms=[settings.auth.ALGORITHM])
+            payload = security.jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             request.state.user = payload.get("sub")
         except JWTError:
             return Response("Invalid token", status_code=401)

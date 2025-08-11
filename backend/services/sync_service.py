@@ -9,14 +9,15 @@ import logging
 from typing import Callable
 from utils.progress_manager import progress_manager
 from asyncio import Lock
-from services.download_service import download_service
+from services.download_service import DownloadService
 
 logger = logging.getLogger(__name__)
 
 class SyncService:
-    def __init__(self):
+    def __init__(self, download_service: DownloadService):
         self.plex_service = None
         self.playlist_service = PlaylistService()
+        self.download_service = download_service
     
     async def _initialize_plex_service(self, server_id: int):
         """(异步) 根据 server_id 获取设置并初始化对应的媒体服务客户端"""
@@ -157,7 +158,7 @@ class SyncService:
                 # 触发自动下载检查
                 try:
                     await progress_manager.send_message(task_id, json.dumps({"status": "downloading", "message": "检查自动下载设置..."}), event="progress")
-                    session_id = await download_service.auto_download_missing(task_id)
+                    session_id = await self.download_service.auto_download_missing(task_id)
                     if session_id:
                         await progress_manager.send_message(task_id, json.dumps({"status": "downloading", "message": f"自动下载会话 {session_id} 已启动。"}), event="progress")
                     else:

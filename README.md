@@ -28,82 +28,86 @@ plex-playlist-sync/
 - Node.js 和 npm
 - Docker (用于容器化部署)
 
-### 安全配置
+### 安全与环境配置
 
-在首次启动应用前，您必须设置以下环境变量以确保应用安全：
+在首次启动应用前，您必须配置必要的环境变量。我们提供了一个模板文件 `backend/.env.example` 来帮助您完成配置。
 
-- `SECRET_KEY`: 用于保护会话和 token 的一个长而随机的字符串。您可以使用以下命令生成一个安全的密钥：
-  ```bash
-  openssl rand -hex 32
-  ```
-- `APP_PASSWORD`: 用于登录 Web 界面的密码。
+1.  **创建您的 `.env` 文件**:
+    将模板文件复制一份，并重命名为 `.env`：
+    ```bash
+    cp backend/.env.example backend/.env
+    ```
 
-您可以将这些变量添加到后端目录下的一个 `.env` 文件中：
+2.  **编辑 `.env` 文件**:
+    打开 `backend/.env` 文件，并根据指引填入您的个人信息。
 
-```
-# backend/.env
-SECRET_KEY=您生成的随机字符串
-APP_PASSWORD=您选择的强密码
-```
+    - `SECRET_KEY`: 用于保护会话和 token 的一个长而随机的字符串。您可以使用以下命令生成一个安全的密钥：
+      ```bash
+      openssl rand -hex 32
+      ```
+    - `APP_PASSWORD`: 用于登录 Web 界面的密码。
+    - `PLEX_URL`: 您的 Plex 服务器的完整 URL。
+    - `PLEX_TOKEN`: 您的 Plex 访问令牌。
+    - `DOWNLOADER_API_KEY`: 下载器所需的 API 密钥。
+    - `DOWNLOAD_PATH`: 下载文件的存放路径。
 
-> **重要提示**: 没有这些配置，应用将无法启动。
+> **重要提示**: 必须将 `SECRET_KEY` 和 `APP_PASSWORD` 填写完整，否则应用将无法启动。
 
 ### 后端设置
 
-1.  克隆仓库:
+1.  **进入 `backend` 目录**:
     ```bash
-    git clone https://your-repository-url/plex-playlist-sync.git
-    cd plex-playlist-sync/backend
+    cd backend
     ```
 
-2.  使用 uv 安装 Python 依赖:
+2.  **安装 Python 依赖**:
     ```bash
     uv sync
     ```
 
-### 前端设置
-
-1.  进入 `web` 目录:
+3.  **数据库迁移**:
+    在首次启动或数据库模型更新后，运行迁移命令：
     ```bash
-    cd ./web
+    uv run alembic upgrade head
     ```
 
-2.  安装 Node.js 依赖:
+### 前端设置
+
+1.  **进入 `web` 目录**:
+    ```bash
+    cd web
+    ```
+
+2.  **安装 Node.js 依赖**:
     ```bash
     npm install
     ```
 
 ## 使用方法
 
-### 启动后端服务
+### 启动开发服务器
 
-在 `backend` 目录下，运行以下命令启动 FastAPI 服务:
+- **后端服务** (在 `backend` 目录下):
+  ```bash
+  uvicorn main:app --reload --host 0.0.0.0 --port 3001
+  ```
+  API 将在 `http://localhost:3001` 上可用。
 
-```bash
-uv run main.py
-```
-
-API 将在 `http://localhost:3000` 上可用。
-
-### 启动前端应用
-
-在 `web` 目录下，运行以下命令启动 React 开发服务器:
-
-```bash
-npm run dev
-```
-
-Web 界面将在 `http://localhost:5173` 上可用。
+- **前端应用** (在 `web` 目录下):
+  ```bash
+  npm run dev
+  ```
+  Web 界面将在 `http://localhost:5173` 上可用。
 
 ### 使用 Docker
 
-使用 Docker Compose 运行整个应用:
+使用 Docker Compose 可以一键启动整个应用:
 
 ```bash
 docker-compose up --build
 ```
+> **注意**: 请确保您已经在 `backend/.env` 文件中完成了所有必要的配置。Docker Compose 会自动加载这些配置。
 
-这将同时启动后端和前端服务。
 
 ## 贡献指南
 

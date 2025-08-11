@@ -151,5 +151,24 @@ class DownloadService:
             logger.info(f"任务 {task_id}: 未满足自动下载条件 (全局: {settings['global_auto_download']}, 任务: {settings['task_auto_download']})。")
             return 0
 
-# 实例化服务，以便在应用的其他部分导入和使用
-download_service = DownloadService(settings_service=SettingsService())
+# 全局变量，用于存储 DownloadService 的单例
+_download_service_instance: Optional[DownloadService] = None
+
+def get_download_service() -> "DownloadService":
+    """
+    依赖注入函数，用于获取 DownloadService 的单例。
+    确保返回的是已初始化的实例。
+    """
+    global _download_service_instance
+    if _download_service_instance is None:
+        # 在正常应用生命周期外（如测试或脚本），创建一个临时实例
+        # 注意：在 FastAPI 应用中，这个分支不应该被执行
+        _download_service_instance = DownloadService(settings_service=SettingsService())
+        logger.warning("DownloadService 在应用生命周期外被临时实例化。")
+    return _download_service_instance
+
+def set_download_service(instance: "DownloadService"):
+    """在应用启动时设置服务实例"""
+    global _download_service_instance
+    _download_service_instance = instance
+

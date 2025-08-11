@@ -52,9 +52,9 @@ async def cleanup_old_download_logs():
 
 
 class TaskScheduler:
-    def __init__(self):
+    def __init__(self, sync_service: SyncService):
         self.scheduler = AsyncIOScheduler()
-        self.sync_service = SyncService()
+        self.sync_service = sync_service
     
     def should_run_task(self, task) -> bool:
         """
@@ -371,5 +371,18 @@ class TaskScheduler:
         self.scheduler.shutdown()
         logger.info("[调度器] 任务调度器已关闭。")
 
-# 创建全局调度器实例
-scheduler = TaskScheduler()
+# 全局变量，用于存储 TaskScheduler 的单例
+_scheduler_instance: "TaskScheduler" = None
+
+def get_scheduler() -> "TaskScheduler":
+    """依赖注入函数，用于获取 TaskScheduler 的单例。"""
+    global _scheduler_instance
+    if _scheduler_instance is None:
+        # 这个分支理论上不应该在正常应用流程中被执行
+        raise RuntimeError("TaskScheduler 尚未在应用启动时初始化。")
+    return _scheduler_instance
+
+def set_scheduler(instance: "TaskScheduler"):
+    """在应用启动时设置调度器实例。"""
+    global _scheduler_instance
+    _scheduler_instance = instance

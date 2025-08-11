@@ -40,17 +40,17 @@ class SettingsService:
             servers = cursor.fetchall()
             
             # 如果数据库中没有服务器，并且环境变量中有Plex配置
-            if not servers and env_settings.plex.URL and env_settings.plex.TOKEN:
+            if not servers and env_settings.PLEX_URL and env_settings.PLEX_TOKEN:
                 logger.info("数据库中无服务器配置，尝试从环境变量创建 Plex 服务器。")
                 
                 # 检查是否已存在名为 'Plex (from env)' 的服务器
                 cursor.execute("SELECT id FROM settings WHERE name = ?", ('Plex (from env)',))
                 if not cursor.fetchone():
                     try:
-                        encrypted_token = encrypt_token(env_settings.plex.TOKEN)
+                        encrypted_token = encrypt_token(env_settings.PLEX_TOKEN)
                         cursor.execute(
                             'INSERT INTO settings (name, server_type, url, token) VALUES (?, ?, ?, ?)',
-                            ('Plex (from env)', 'plex', env_settings.plex.URL, encrypted_token)
+                            ('Plex (from env)', 'plex', env_settings.PLEX_URL, encrypted_token)
                         )
                         conn.commit()
                         logger.info("已成功从环境变量中创建并存储 Plex 服务器配置。")
@@ -136,61 +136,79 @@ class SettingsService:
     # --- Download Settings ---
 
     @staticmethod
+    def __get_and_merge_download_settings(conn: sqlite3.Connection) -> Optional[DownloadSettings]:
+        """
+        [PRIVATE] 从数据库获取设置并与环境变量合并。
+        这是核心逻辑，旨在在事务内部调用。
+        """
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM download_settings")
+        db_settings = {row['key']: row['value'] for row in cursor.fetchall()}
+
+        db_api_key = ""
+        if 'api_key' in db_settings:
+            try:
+                # 数据库中的 API Key 是加密的
+                db_api_key = decrypt_token(db_settings['api_key'])
+            except Exception:
+                db_api_key = ""
+
+        # 优先级: 环境变量 > 数据库 > 硬编码的默认值
+        final_api_key = env_settings.DOWNLOADER_API_KEY or db_api_key
+        final_download_path = env_settings.DOWNLOAD_PATH or db_settings.get('download_path', '/downloads')
+
+        return DownloadSettings(
+            id=1,
+            api_key=final_api_key,
+            download_path=final_download_path,
+            preferred_quality=db_settings.get('preferred_quality', 'high'),
+            download_lyrics=bool(int(db_settings.get('download_lyrics', 0))),
+            auto_download=bool(int(db_settings.get('auto_download', 0))),
+            max_concurrent_downloads=int(db_settings.get('max_concurrent_downloads', 3))
+        )
+
+    @staticmethod
     def get_download_settings() -> Optional[DownloadSettings]:
-        def _get_settings(conn: sqlite3.Connection) -> Optional[DownloadSettings]:
-            cursor = conn.cursor()
-            cursor.execute("SELECT key, value FROM download_settings")
-            db_settings = {row['key']: row['value'] for row in cursor.fetchall()}
-
-            if 'api_key' in db_settings:
-                try:
-                    db_settings['api_key'] = decrypt_token(db_settings['api_key'])
-                except Exception:
-                    db_settings['api_key'] = ""
-
-            final_api_key = env_settings.downloader.API_KEY or db_settings.get('api_key', '')
-            final_download_path = env_settings.downloader.PATH or db_settings.get('download_path', '/downloads')
-
-            return DownloadSettings(
-                id=1,
-                api_key=final_api_key,
-                download_path=final_download_path,
-                preferred_quality=db_settings.get('preferred_quality', 'high'),
-                download_lyrics=bool(int(db_settings.get('download_lyrics', 0))),
-                auto_download=bool(int(db_settings.get('auto_download', 0))),
-                max_concurrent_downloads=int(db_settings.get('max_concurrent_downloads', 3))
-            )
-        return SettingsService._execute(_get_settings)
+        """
+        获取下载设置的公共方法。它管理自己的数据库连接。
+        """
+        return SettingsService._execute(SettingsService.__get_and_merge_download_settings)
 
     @staticmethod
     def save_download_settings(settings: DownloadSettingsCreate) -> DownloadSettings:
         def _save_settings(conn: sqlite3.Connection, settings: DownloadSettingsCreate) -> DownloadSettings:
-            settings_to_save = settings.model_dump()
-            settings_to_save.pop('api_key', None)
-            settings_to_save.pop('download_path', None)
+            settings_to_save = {
+                "preferred_quality": settings.preferred_quality,
+                "download_lyrics": int(settings.download_lyrics),
+                "auto_download": int(settings.auto_download),
+                "max_concurrent_downloads": settings.max_concurrent_downloads,
+            }
 
             cursor = conn.cursor()
             for key, value in settings_to_save.items():
-                if isinstance(value, bool): value = int(value)
                 cursor.execute(
                     "INSERT INTO download_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     (key, str(value))
                 )
-            conn.commit()
-            
-            # Re-fetch to return the complete, merged settings
-            cursor.execute("SELECT key, value FROM download_settings")
-            db_settings = {row['key']: row['value'] for row in cursor.fetchall()}
-            final_api_key = env_settings.downloader.API_KEY or ""
-            final_download_path = env_settings.downloader.PATH or "/downloads"
 
-            return DownloadSettings(
-                id=1,
-                api_key=final_api_key,
-                download_path=final_download_path,
-                preferred_quality=db_settings.get('preferred_quality', 'high'),
-                download_lyrics=bool(int(db_settings.get('download_lyrics', 0))),
-                auto_download=bool(int(db_settings.get('auto_download', 0))),
-                max_concurrent_downloads=int(db_settings.get('max_concurrent_downloads', 3))
-            )
+            # 如果请求中提供了 API Key（例如，从UI更新），则加密并保存
+            if settings.api_key:
+                encrypted_api_key = encrypt_token(settings.api_key)
+                cursor.execute(
+                    "INSERT INTO download_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    ('api_key', encrypted_api_key)
+                )
+
+            # 如果请求中提供了下载路径，则保存
+            if settings.download_path:
+                cursor.execute(
+                    "INSERT INTO download_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    ('download_path', settings.download_path)
+                )
+
+            conn.commit()
+
+            # 保存后，调用核心逻辑函数以获取最终的合并设置
+            return SettingsService.__get_and_merge_download_settings(conn)
+
         return SettingsService._execute(_save_settings, settings)

@@ -1,0 +1,26 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+
+# Database - 非常重要：防止数据库文件被复制到镜像中
+database.sqlite
+backend/database.sqlite
+
+# Logs & Downloads
+backend/logs/
+backend/Downloads/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

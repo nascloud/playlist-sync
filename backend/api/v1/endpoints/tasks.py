@@ -4,7 +4,9 @@ from schemas.tasks import Task, TaskCreate, TaskList, TaskUpdate
 from schemas.response import SuccessResponse
 from services.task_service import TaskService
 from services.sync_service import SyncService
+from services.download_service import get_download_service, DownloadService
 from services.log_service import LogService
+from utils.scheduler import get_scheduler, TaskScheduler
 from pydantic import BaseModel, HttpUrl
 import logging
 import json
@@ -27,7 +29,7 @@ async def get_tasks():
         raise HTTPException(status_code=500, detail="获取任务时发生内部错误。")
 
 @router.post("/tasks", response_model=Task, status_code=201)
-async def create_task(task_data: TaskCreate):
+async def create_task(task_data: TaskCreate, download_service: DownloadService = Depends(get_download_service), scheduler: TaskScheduler = Depends(get_scheduler)):
     """
     创建一个新的同步任务。
     如果未提供名称，将尝试从URL解析标题。
@@ -36,7 +38,7 @@ async def create_task(task_data: TaskCreate):
         # 如果用户没有提供歌单名，则尝试从URL解析
         if not task_data.name:
             try:
-                sync_service = SyncService()
+                sync_service = SyncService(download_service=download_service)
                 playlist_info = await sync_service.preview_playlist(
                     playlist_url=str(task_data.playlist_url), 
                     platform=task_data.platform
@@ -53,7 +55,6 @@ async def create_task(task_data: TaskCreate):
             raise HTTPException(status_code=500, detail="创建任务后无法找到该任务。")
         
         # 安排新任务
-        from utils.scheduler import scheduler
         scheduler.reload_task_schedule(new_task.id)
 
         return new_task
@@ -67,13 +68,12 @@ async def create_task(task_data: TaskCreate):
 
 
 @router.put("/tasks/{task_id}", response_model=SuccessResponse)
-async def update_task_schedule(task_id: int = Path(..., title="任务ID"), task_update: TaskUpdate = Body(...)):
+async def update_task_schedule(task_id: int = Path(..., title="任务ID"), task_update: TaskUpdate = Body(...), scheduler: TaskScheduler = Depends(get_scheduler)):
     """更新任务的同步计划"""
     try:
         success = TaskService.update_task_schedule(task_id, task_update.cron_schedule)
         if success:
             # 重新加载任务调度
-            from utils.scheduler import scheduler
             scheduler.reload_task_schedule(task_id)
             return SuccessResponse(success=True, message="任务计划已成功更新。")
         else:
@@ -83,11 +83,10 @@ async def update_task_schedule(task_id: int = Path(..., title="任务ID"), task_
         raise HTTPException(status_code=500, detail=f"更新任务计划失败: {str(e)}")
 
 @router.delete("/tasks/{task_id}", response_model=SuccessResponse)
-async def delete_task(task_id: int = Path(..., title="任务ID")):
+async def delete_task(task_id: int = Path(..., title="任务ID"), scheduler: TaskScheduler = Depends(get_scheduler)):
     """删除任务"""
     try:
         # 在删除前，先从调度器中移除
-        from utils.scheduler import scheduler
         scheduler.remove_task_from_schedule(task_id)
         
         success = TaskService.delete_task(task_id)
@@ -100,12 +99,12 @@ async def delete_task(task_id: int = Path(..., title="任务ID")):
         raise HTTPException(status_code=500, detail=f"删除任务失败: {str(e)}")
 
 @router.get("/tasks/{task_id}/sync/stream")
-async def sync_task_stream(task_id: int = Path(..., title="任务ID")):
+async def sync_task_stream(task_id: int = Path(..., title="任务ID"), download_service: DownloadService = Depends(get_download_service)):
     """
     通过 Server-Sent Events (SSE) 实时流式传输同步进度。
     """
     # 立即在后台启动同步任务
-    asyncio.create_task(run_sync_in_background(task_id))
+    asyncio.create_task(run_sync_in_background(task_id, download_service))
     
     # 返回一个流式响应
     return StreamingResponse(
@@ -117,7 +116,7 @@ async def sync_task_stream(task_id: int = Path(..., title="任务ID")):
         }
     )
 
-async def run_sync_in_background(task_id: int):
+async def run_sync_in_background(task_id: int, download_service: DownloadService):
     """一个在后台运行同步任务的辅助函数。"""
     try:
         task = TaskService.get_task_by_id(task_id)
@@ -125,7 +124,7 @@ async def run_sync_in_background(task_id: int):
             await progress_manager.send_message(task_id, json.dumps({"status": "error", "message": "未找到任务"}), event="error")
             return
 
-        sync_service = SyncService()
+        sync_service = SyncService(download_service=download_service)
         await sync_service.sync_playlist(
             task_id=task.id,
             server_id=task.server_id,
