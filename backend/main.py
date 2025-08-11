@@ -1,7 +1,11 @@
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 import uvicorn
 from contextlib import asynccontextmanager
+import os
+import logging
 
 from api.v1.api import api_router
 from api.v1.endpoints import auth
@@ -12,8 +16,6 @@ from core.logging_config import setup_logging
 from core import security
 from jose import JWTError
 
-
-import logging
 
 # ... (其他导入)
 
@@ -64,11 +66,12 @@ app.add_middleware(
 
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
-    if not request.url.path.startswith(f"{settings.API_V1_STR}/"):
-        return await call_next(request)
-    
     # 放行登录接口和SSE流
     if request.url.path == f"{settings.API_V1_STR}/auth/login" or "/sync/stream" in request.url.path:
+        return await call_next(request)
+
+    # 仅保护API路由
+    if not request.url.path.startswith(settings.API_V1_STR):
         return await call_next(request)
 
     token = request.headers.get("Authorization")
@@ -92,18 +95,38 @@ async def auth_middleware(request: Request, call_next):
     return response
 
 
+
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
+# 挂载静态文件
+STATIC_DIR = "static"
+STATIC_ASSETS_DIR = os.path.join(STATIC_DIR, "assets")
 
-@app.get("/")
-async def root():
-    return {"message": "Plex Music Sync API is running."}
+# 确保静态文件目录存在
+os.makedirs(STATIC_ASSETS_DIR, exist_ok=True)
 
-@app.get("/api/health")
-async def health_check():
-    return {"status": "OK"}
+app.mount("/assets", StaticFiles(directory=STATIC_ASSETS_DIR), name="assets")
+
+@app.get("/{full_path:path}")
+async def serve_frontend(request: Request, full_path: str):
+    # API请求不应由此处理器处理
+    if full_path.startswith("api/"):
+        return Response("Not Found", status_code=404)
+
+    # 尝试提供请求的静态文件
+    file_path = os.path.join(STATIC_DIR, full_path)
+    if os.path.exists(file_path) and os.path.isfile(file_path):
+        return FileResponse(file_path)
+    
+    # 对于所有其他路径，返回index.html以支持SPA路由
+    index_path = os.path.join(STATIC_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
+    return Response("Frontend not found. Please build the frontend.", status_code=404)
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=settings.PORT)
