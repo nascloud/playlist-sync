@@ -62,9 +62,12 @@ class AutoPlaylistService:
         # 全角转半角
         text = text.translate(str.maketrans('１２３４５６７８９０ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', 
                                             '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'))
-        # 移除括号内的特定内容，而不是整个括号
-        text = re.sub(r"\((feat|ft|remix|edit)[^)]*\)", "", text)
-        text = re.sub(r"\[(feat|ft|remix|edit)[^]]*\]", "", text)
+        # 移除括号内的特定内容（支持中英文括号）
+        text = re.sub(r"[（\(](feat|ft|remix|edit)[^)）]*[)）]", "", text)
+        text = re.sub(r"[［\[]](feat|ft|remix|edit)[^\]］]*[\]］]", "", text)
+        # 移除所有剩余的括号内容（不管是否包含关键词）
+        text = re.sub(r"[（\(][^)）]*[)）]", "", text)
+        text = re.sub(r"[［\[][^\]］]*[\]］]", "", text)
         # 移除标点
         text = re.sub(r'[^\w\s]', ' ', text)
         # 移除关键字
@@ -97,7 +100,8 @@ class AutoPlaylistService:
             album_score = fuzz.ratio(plex_album, missing_album)
             
             # 综合分数 (标题权重最高，艺术家次之，专辑最低)
-            combined_score = (title_score * 0.6) + (artist_score * 0.3) + (album_score * 0.1)
+            # 调整权重：标题70%，艺术家25%，专辑5%
+            combined_score = (title_score * 0.7) + (artist_score * 0.25) + (album_score * 0.05)
             
             # 设定一个阈值，例如80分以上认为是匹配
             is_match = combined_score > 80

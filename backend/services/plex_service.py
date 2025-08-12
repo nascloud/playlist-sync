@@ -29,9 +29,12 @@ def normalize_string(text: str) -> str:
     # 全角转半角
     text = text.translate(str.maketrans('１２３４５６７８９０ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', 
                                         '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'))
-    # 移除括号内的特定内容，而不是整个括号
-    text = re.sub(r"\((feat|ft|remix|edit)[^)]*\)", "", text)
-    text = re.sub(r"\[(feat|ft|remix|edit)[^]]*\]", "", text)
+    # 移除括号内的特定内容（支持中英文括号）
+    text = re.sub(r"[（\(](feat|ft|remix|edit)[^)）]*[)）]", "", text)
+    text = re.sub(r"[［\[]](feat|ft|remix|edit)[^\]］]*[\]］]", "", text)
+    # 移除所有剩余的括号内容（不管是否包含关键词）
+    text = re.sub(r"[（\(][^)）]*[)）]", "", text)
+    text = re.sub(r"[［\[][^\]］]*[\]］]", "", text)
     # 移除标点
     text = re.sub(r'[^\w\s]', ' ', text)
     # 移除关键字
