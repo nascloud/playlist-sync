@@ -11,7 +11,7 @@ load_dotenv()
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from backend.services.plex_service import PlexService
+from services.plex_service import PlexService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
