@@ -106,6 +106,7 @@ The application uses SQLite with the following main tables:
 2. **SyncService**: Handles playlist synchronization
 3. **DownloadService**: Manages music downloads
 4. **TaskScheduler**: Handles scheduled sync tasks
+5. **AutoPlaylistService**: Automatically adds new music to corresponding Plex playlists
 
 ## API Endpoints
 
@@ -168,6 +169,7 @@ Main API prefix: `/api/v1`
 4. **Download Management**: Download missing songs from external platforms
 5. **Security**: Encrypted storage of credentials
 6. **Containerization**: Docker support for easy deployment
+7. **Smart Playlist Management**: Automatically adds new music to corresponding Plex playlists
 
 ## Common Development Tasks
 
