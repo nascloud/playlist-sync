@@ -260,6 +260,14 @@ class DownloadQueueManager:
                     if auto_playlist_service.plex_service:
                         music_library = await auto_playlist_service.plex_service.get_music_library()
                         if music_library:
+                            # 首先触发Plex扫描新文件
+                            session_logger.info("触发Plex扫描新文件")
+                            scan_result = await auto_playlist_service.plex_service.scan_and_refresh(music_library)
+                            if scan_result:
+                                session_logger.info("Plex扫描请求已发送")
+                            else:
+                                session_logger.warning("Plex扫描请求失败")
+                            
                             # 处理最近5分钟内添加的音轨（给Plex一些时间来索引文件）
                             since_time = datetime.now().replace(microsecond=0) - timedelta(minutes=5)
                             await auto_playlist_service.process_tracks_for_task(task_id, music_library, since_time)
