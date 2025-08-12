@@ -10,6 +10,7 @@ from typing import Callable
 from utils.progress_manager import progress_manager
 from asyncio import Lock
 from services.download_service import DownloadService
+from services.auto_playlist_service import AutoPlaylistService
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +19,8 @@ class SyncService:
         self.plex_service = None
         self.playlist_service = PlaylistService()
         self.download_service = download_service
+        # 初始化AutoPlaylistService
+        self.auto_playlist_service = None
     
     async def _initialize_plex_service(self, server_id: int):
         """(异步) 根据 server_id 获取设置并初始化对应的媒体服务客户端"""
@@ -52,6 +55,11 @@ class SyncService:
 
         token = await asyncio.to_thread(decrypt_token, encrypted_token)
         self.plex_service = await PlexService.create_instance(url, token, verify_ssl)
+        
+        # 初始化AutoPlaylistService
+        if self.auto_playlist_service is None:
+            self.auto_playlist_service = AutoPlaylistService(plex_service=self.plex_service, task_service=TaskService())
+            AutoPlaylistService.set_instance(self.auto_playlist_service)
 
     async def preview_playlist(self, playlist_url: str, platform: str):
         """

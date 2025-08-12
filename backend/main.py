@@ -55,11 +55,15 @@ async def lifespan(app: FastAPI):
     # 2. 初始化下载器
     await download_service_instance.initialize_downloader()
     
-    # 3. 将完全初始化的实例设置为全局单例
+    # 3. 初始化AutoPlaylistService
+    # 注意：这需要plex_service，但我们暂时无法直接获取
+    # 我们将在SyncService中创建并设置它
+    
+    # 4. 将完全初始化的实例设置为全局单例
     set_download_service(download_service_instance)
     set_scheduler(scheduler_instance)
     
-    # 4. 启动调度器
+    # 5. 启动调度器
     scheduler_instance.start()
     
     logger.info("应用启动完成，所有服务已初始化。")

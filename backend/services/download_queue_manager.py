@@ -2,13 +2,14 @@
 import asyncio
 import sqlite3
 from typing import List, Optional, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 from core.database import get_db_connection
 from services.download_db_service import download_db_service
 from schemas.download import DownloadQueueItem, DownloadQueueItemCreate
 from core.logging_config import download_log_manager
 from services.downloader_core import downloader as downloader_core
 from services.settings_service import SettingsService
+from services.auto_playlist_service import AutoPlaylistService
 import logging
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,35 @@ class DownloadQueueManager:
                 None, download_db_service.update_queue_item_status, queue_id, "success"
             )
             session_logger.info(f"下载成功: {title} (ID: {queue_id})。文件保存在: {file_path}")
+            
+            # 触发自动播放列表处理
+            try:
+                # 获取session_id对应的task_id
+                task_id = download_db_service.get_task_id_by_session_id(session_id)
+                if task_id:
+                    session_logger.info(f"触发自动播放列表处理 for task {task_id}")
+                    # 获取AutoPlaylistService实例
+                    try:
+                        auto_playlist_service = AutoPlaylistService.get_instance()
+                        # 获取Plex音乐库实例
+                        # 注意：这需要plex_service已经初始化
+                        if auto_playlist_service.plex_service:
+                            music_library = await auto_playlist_service.plex_service.get_music_library()
+                            if music_library:
+                                # 处理最近5分钟内添加的音轨（给Plex一些时间来索引文件）
+                                since_time = datetime.now().replace(microsecond=0) - timedelta(minutes=5)
+                                await auto_playlist_service.process_tracks_for_task(task_id, music_library, since_time)
+                                session_logger.info(f"自动播放列表处理完成 for task {task_id}")
+                            else:
+                                session_logger.warning(f"未能获取Plex音乐库实例")
+                        else:
+                            session_logger.warning(f"PlexService未初始化")
+                    except RuntimeError as e:
+                        session_logger.warning(f"AutoPlaylistService未初始化: {e}")
+                else:
+                    session_logger.warning(f"未能找到session {session_id} 对应的task_id")
+            except Exception as e:
+                session_logger.error(f"自动播放列表处理失败: {e}", exc_info=True)
             
         except Exception as e:
             error_msg = str(e)

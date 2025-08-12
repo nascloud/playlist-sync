@@ -11,6 +11,7 @@ from core.logging_config import download_log_manager
 from croniter import croniter
 import os
 from pathlib import Path
+from utils.periodic_track_processor import periodic_new_track_processing
 
 logger = logging.getLogger(__name__)
 
@@ -362,8 +363,18 @@ class TaskScheduler:
             replace_existing=True
         )
         
+        # 添加定期新音轨处理任务（每30分钟执行一次）
+        self.scheduler.add_job(
+            periodic_new_track_processing,
+            'interval',
+            minutes=30,
+            args=[self.sync_service],
+            id='periodic_new_track_processing',
+            replace_existing=True
+        )
+        
         self.scheduler.start()
-        logger.info("[调度器] 任务调度器已启动，并已安排日志清理任务。")
+        logger.info("[调度器] 任务调度器已启动，并已安排日志清理任务和定期新音轨处理任务。")
     
     def shutdown(self):
         """关闭调度器"""

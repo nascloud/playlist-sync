@@ -128,7 +128,7 @@ class DownloadDBService:
             self._execute_in_thread(_update_count, session_id, count_to_add)
 
     def get_next_pending_item(self) -> Optional[DownloadQueueItem]:
-        """从队列中获取下一个待处理的项目并将其标记为“下载中”（原子操作）。"""
+        """从队列中获取下一个待处理的项目并将其标记为"下载中"（原子操作）。"""
         def _get_next(conn: sqlite3.Connection) -> Optional[DownloadQueueItem]:
             try:
                 conn.isolation_level = 'EXCLUSIVE'
@@ -229,7 +229,7 @@ class DownloadDBService:
         self._execute_in_thread(_update_status, item_id, status, error_message)
 
     def cancel_queue_item(self, item_id: int):
-        """将单个队列项目标记为“已取消”。"""
+        """将单个队列项目标记为"已取消"。"""
         def _cancel_item(conn: sqlite3.Connection, item_id: int):
             cursor = conn.cursor()
             cursor.execute(
@@ -284,7 +284,6 @@ class DownloadDBService:
                 raise
         
         return self._execute_in_thread(_delete_completed)
-
 
     def pause_session_and_items(self, session_id: int):
         """在一个事务中暂停会话及其所有待处理的项目。"""
@@ -421,6 +420,24 @@ class DownloadDBService:
             return {"sessions": list(sessions_map.values())}
 
         return self._execute_in_thread(_get_status)
+        
+    def get_task_id_by_session_id(self, session_id: int, conn: Optional[sqlite3.Connection] = None) -> Optional[int]:
+        """
+        根据session_id获取对应的task_id。
+        :param session_id: 下载会话ID
+        :param conn: 数据库连接（可选）
+        :return: 任务ID或None（如果未找到）
+        """
+        def _get_task_id(conn: sqlite3.Connection, session_id: int) -> Optional[int]:
+            cursor = conn.cursor()
+            cursor.execute('SELECT task_id FROM download_sessions WHERE id = ?', (session_id,))
+            row = cursor.fetchone()
+            return row['task_id'] if row else None
+        
+        if conn:
+            return _get_task_id(conn, session_id)
+        else:
+            return self._execute_in_thread(_get_task_id, session_id)
 
 # 实例化服务
 download_db_service = DownloadDBService()

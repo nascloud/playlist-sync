@@ -185,3 +185,67 @@ class TaskService:
             return _get_unmatched(db, task_id)
         else:
             return TaskService._execute(_get_unmatched, task_id)
+            
+    @staticmethod
+    def remove_matched_songs_from_task(task_id: int, matched_songs: List[dict], db: Optional[sqlite3.Connection] = None) -> bool:
+        """
+        从任务的未匹配歌曲列表中移除已匹配的歌曲，并更新同步计数。
+        :param task_id: 任务ID
+        :param matched_songs: 已匹配的歌曲列表
+        :param db: 数据库连接（可选）
+        :return: 操作是否成功
+        """
+        def _remove_matched(conn: sqlite3.Connection, task_id: int, matched_songs: List[dict]) -> bool:
+            try:
+                cursor = conn.cursor()
+                
+                # 1. 获取当前的未匹配歌曲列表
+                cursor.execute('SELECT unmatched_songs, matched_songs FROM tasks WHERE id = ?', (task_id,))
+                row = cursor.fetchone()
+                if not row:
+                    logger.warning(f"Task {task_id} not found")
+                    return False
+                    
+                current_unmatched = []
+                if row['unmatched_songs']:
+                    try:
+                        current_unmatched = json.loads(row['unmatched_songs'])
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse unmatched_songs for task {task_id}")
+                        current_unmatched = []
+                
+                current_matched_count = row['matched_songs'] or 0
+                
+                # 2. 从当前未匹配列表中移除已匹配的歌曲
+                # 通过比较歌曲的关键信息（标题、艺术家）来识别匹配项
+                matched_song_keys = {
+                    (song.get('title', ''), song.get('artist', '')) 
+                    for song in matched_songs 
+                    if song.get('title') and song.get('artist')
+                }
+                
+                new_unmatched = [
+                    song for song in current_unmatched
+                    if (song.get('title', ''), song.get('artist', '')) not in matched_song_keys
+                ]
+                
+                removed_count = len(current_unmatched) - len(new_unmatched)
+                new_matched_count = current_matched_count + removed_count
+                
+                # 3. 更新数据库
+                cursor.execute(
+                    'UPDATE tasks SET unmatched_songs = ?, matched_songs = ? WHERE id = ?', 
+                    (json.dumps(new_unmatched), new_matched_count, task_id)
+                )
+                conn.commit()
+                
+                logger.info(f"Task {task_id}: Removed {removed_count} matched songs, new matched count: {new_matched_count}")
+                return True
+            except Exception as e:
+                logger.error(f"Error removing matched songs from task {task_id}: {e}", exc_info=True)
+                return False
+        
+        if db:
+            return _remove_matched(db, task_id, matched_songs)
+        else:
+            return TaskService._execute(_remove_matched, task_id, matched_songs)

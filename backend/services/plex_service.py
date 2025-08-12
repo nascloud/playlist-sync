@@ -11,6 +11,7 @@ import logging
 import re
 import requests
 from requests.packages.urllib3.exceptions import InsecureRequestWarning
+from datetime import datetime
 
 # 忽略不安全请求的警告 (当 verify=False 时)
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
@@ -192,6 +193,38 @@ class PlexService:
         """异步创建或更新播放列表"""
         return await asyncio.to_thread(self._create_or_update_playlist_sync, name, tracks, log_callback)
 
+    def _find_newly_added_tracks_sync(self, library: MusicSection, since: datetime) -> List[Track]:
+        """
+        (同步) 查找自 'since' 时间以来新添加到库的音轨。
+        :param library: Plex音乐库对象
+        :param since: datetime 对象，表示查找此时间之后添加的音轨
+        :return: 新添加的 Track 对象列表
+        """
+        try:
+            # 使用 Plex API 的 recentlyAdded 方法获取最近添加的内容
+            # maxresults=0 表示获取所有结果
+            # libtype='track' 限制结果为音轨
+            recently_added = library.recentlyAdded(libtype='track', maxresults=0)
+            
+            # 过滤出在指定时间之后添加的音轨
+            # 注意：Plex 的 addedAt 是 datetime 类型
+            new_tracks = [track for track in recently_added if track.addedAt and track.addedAt > since]
+            
+            logger.info(f"Found {len(new_tracks)} tracks added since {since}")
+            return new_tracks
+        except Exception as e:
+            logger.error(f"Error finding newly added tracks: {e}", exc_info=True)
+            return [] # Return empty list on error to prevent breaking the caller
+
+    async def find_newly_added_tracks(self, library: MusicSection, since: datetime) -> List[Track]:
+        """
+        (异步) 查找自 'since' 时间以来新添加到库的音轨。
+        :param library: Plex音乐库对象
+        :param since: datetime 对象，表示查找此时间之后添加的音轨
+        :return: 新添加的 Track 对象列表
+        """
+        return await asyncio.to_thread(self._find_newly_added_tracks_sync, library, since)
+
     @retry(
         stop=stop_after_attempt(3), 
         wait=wait_fixed(2),
@@ -225,3 +258,37 @@ class PlexService:
             logger.error(f'导入到 Plex 时出错: {str(e)}', exc_info=True)
             if log_callback: log_callback('error', f'导入到 Plex 时出错: {str(e)}')
             return False
+            
+    def _scan_and_refresh_sync(self, library: MusicSection, file_path: Optional[str] = None) -> bool:
+        """
+        (同步) 通知Plex扫描指定路径或整个音乐库以导入新文件。
+        :param library: Plex音乐库对象
+        :param file_path: (可选) 需要扫描的文件或文件夹在Plex服务器上的绝对路径。
+                          如果为None，则刷新整个音乐库。
+        :return: 是否成功发起扫描请求
+        """
+        try:
+            if file_path:
+                logger.info(f"Requesting Plex to scan and refresh specific path: {file_path}")
+                # Use the update method which is more targeted
+                library.update(path=file_path)
+                logger.info(f"Successfully requested scan for path: {file_path}")
+            else:
+                logger.info("Requesting Plex to refresh the entire music library")
+                # Refresh the entire library section
+                library.refresh()
+                logger.info("Successfully requested refresh for the entire music library")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to request scan/refresh: {e}", exc_info=True)
+            return False
+
+    async def scan_and_refresh(self, library: MusicSection, file_path: Optional[str] = None) -> bool:
+        """
+        (异步) 通知Plex扫描指定路径或整个音乐库以导入新文件。
+        :param library: Plex音乐库对象
+        :param file_path: (可选) 需要扫描的文件或文件夹在Plex服务器上的绝对路径。
+                          如果为None，则刷新整个音乐库。
+        :return: 是否成功发起扫描请求
+        """
+        return await asyncio.to_thread(self._scan_and_refresh_sync, library, file_path)

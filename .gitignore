@@ -35,3 +35,6 @@ secrets-to-remove.txt
 
 # Documentation with sensitive info
 docs/AIAPI.md
+
+# Build artifacts
+web/dist/
