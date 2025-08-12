@@ -182,44 +182,36 @@ class DownloadDBService:
                     (status, error_message, item_id)
                 )
 
-                # 只有成功时才更新计数和检查会话状态
+                # 获取 session_id
+                cursor.execute("SELECT session_id FROM download_queue WHERE id = ?", (item_id,))
+                session_id_row = cursor.fetchone()
+                session_id = session_id_row['session_id'] if session_id_row else None
+
+                # 更新计数和检查会话状态（无论成功还是失败）
                 if status == 'success':
-                    # 2. 获取 session_id 并增加 session 的 success_count
-                    cursor.execute("SELECT session_id FROM download_queue WHERE id = ?", (item_id,))
-                    session_id_row = cursor.fetchone()
-                    if session_id_row:
-                        session_id = session_id_row['session_id']
+                    # 2. 增加 session 的 success_count
+                    if session_id:
                         cursor.execute(
                             "UPDATE download_sessions SET success_count = success_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                             (session_id,)
                         )
-                        
-                        # 3. 检查会话是否完成
-                        cursor.execute("SELECT total_songs, COALESCE(success_count, 0) as success_count, COALESCE(failed_count, 0) as failed_count FROM download_sessions WHERE id = ?", (session_id,))
-                        session_info = cursor.fetchone()
-                        if session_info and (session_info['success_count'] + session_info['failed_count'] >= session_info['total_songs']):
-                            cursor.execute(
-                                "UPDATE download_sessions SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
-                                (session_id,)
-                            )
                 elif status == 'failed':
                     # 如果失败，也更新计数器
-                    cursor.execute("SELECT session_id FROM download_queue WHERE id = ?", (item_id,))
-                    session_id_row = cursor.fetchone()
-                    if session_id_row:
-                        session_id = session_id_row['session_id']
+                    if session_id:
                         cursor.execute(
                             "UPDATE download_sessions SET failed_count = failed_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                             (session_id,)
                         )
-                        # 同样检查会话是否完成
-                        cursor.execute("SELECT total_songs, COALESCE(success_count, 0) as success_count, COALESCE(failed_count, 0) as failed_count FROM download_sessions WHERE id = ?", (session_id,))
-                        session_info = cursor.fetchone()
-                        if session_info and (session_info['success_count'] + session_info['failed_count'] >= session_info['total_songs']):
-                             cursor.execute(
-                                "UPDATE download_sessions SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
-                                (session_id,)
-                            )
+                
+                # 检查会话是否完成（无论成功还是失败）
+                if session_id:
+                    cursor.execute("SELECT total_songs, COALESCE(success_count, 0) as success_count, COALESCE(failed_count, 0) as failed_count FROM download_sessions WHERE id = ?", (session_id,))
+                    session_info = cursor.fetchone()
+                    if session_info and (session_info['success_count'] + session_info['failed_count'] >= session_info['total_songs']):
+                        cursor.execute(
+                            "UPDATE download_sessions SET status = 'completed', completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                            (session_id,)
+                        )
                 
                 conn.commit()
             except Exception:

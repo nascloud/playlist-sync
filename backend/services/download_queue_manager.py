@@ -166,35 +166,6 @@ class DownloadQueueManager:
             )
             session_logger.info(f"下载成功: {title} (ID: {queue_id})。文件保存在: {file_path}")
             
-            # 触发自动播放列表处理
-            try:
-                # 获取session_id对应的task_id
-                task_id = download_db_service.get_task_id_by_session_id(session_id)
-                if task_id:
-                    session_logger.info(f"触发自动播放列表处理 for task {task_id}")
-                    # 获取AutoPlaylistService实例
-                    try:
-                        auto_playlist_service = AutoPlaylistService.get_instance()
-                        # 获取Plex音乐库实例
-                        # 注意：这需要plex_service已经初始化
-                        if auto_playlist_service.plex_service:
-                            music_library = await auto_playlist_service.plex_service.get_music_library()
-                            if music_library:
-                                # 处理最近5分钟内添加的音轨（给Plex一些时间来索引文件）
-                                since_time = datetime.now().replace(microsecond=0) - timedelta(minutes=5)
-                                await auto_playlist_service.process_tracks_for_task(task_id, music_library, since_time)
-                                session_logger.info(f"自动播放列表处理完成 for task {task_id}")
-                            else:
-                                session_logger.warning(f"未能获取Plex音乐库实例")
-                        else:
-                            session_logger.warning(f"PlexService未初始化")
-                    except RuntimeError as e:
-                        session_logger.warning(f"AutoPlaylistService未初始化: {e}")
-                else:
-                    session_logger.warning(f"未能找到session {session_id} 对应的task_id")
-            except Exception as e:
-                session_logger.error(f"自动播放列表处理失败: {e}", exc_info=True)
-            
         except Exception as e:
             error_msg = str(e)
             session_logger.error(f"下载失败: {title} (ID: {queue_id}), 原因: {error_msg}", exc_info=True)
@@ -207,6 +178,33 @@ class DownloadQueueManager:
             )
             
         finally:
+            # 检查会话是否已完成，如果已完成则触发自动播放列表处理
+            def check_session_completed():
+                conn = get_db_connection()
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        SELECT ds.status, ds.total_songs, 
+                               COALESCE(ds.success_count, 0) as success_count, 
+                               COALESCE(ds.failed_count, 0) as failed_count,
+                               ds.id as session_id
+                        FROM download_sessions ds 
+                        WHERE ds.id = ?
+                    """, (session_id,))
+                    session_info = cursor.fetchone()
+                    if session_info and session_info['status'] == 'completed':
+                        # 会话已完成，触发自动播放列表处理
+                        return True, session_info['session_id']
+                    return False, None
+                finally:
+                    conn.close()
+            
+            loop = asyncio.get_running_loop()
+            is_completed, completed_session_id = await loop.run_in_executor(None, check_session_completed)
+            
+            if is_completed and completed_session_id:
+                await self._trigger_auto_playlist_processing(completed_session_id, session_logger)
+            
             session_logger.debug(f"项目 {queue_id} 释放信号量。")
             self.download_semaphore.release()
             del self.active_downloads[queue_id]
@@ -246,6 +244,36 @@ class DownloadQueueManager:
                 logger.info(f"已取消活跃的下载任务: {queue_id}")
         
         logger.info(f"会话 {session_id} 已成功暂停。")
+
+    async def _trigger_auto_playlist_processing(self, session_id: int, session_logger: logging.Logger):
+        """触发自动播放列表处理"""
+        try:
+            # 获取session_id对应的task_id
+            task_id = download_db_service.get_task_id_by_session_id(session_id)
+            if task_id:
+                session_logger.info(f"触发自动播放列表处理 for task {task_id}")
+                # 获取AutoPlaylistService实例
+                try:
+                    auto_playlist_service = AutoPlaylistService.get_instance()
+                    # 获取Plex音乐库实例
+                    # 注意：这需要plex_service已经初始化
+                    if auto_playlist_service.plex_service:
+                        music_library = await auto_playlist_service.plex_service.get_music_library()
+                        if music_library:
+                            # 处理最近5分钟内添加的音轨（给Plex一些时间来索引文件）
+                            since_time = datetime.now().replace(microsecond=0) - timedelta(minutes=5)
+                            await auto_playlist_service.process_tracks_for_task(task_id, music_library, since_time)
+                            session_logger.info(f"自动播放列表处理完成 for task {task_id}")
+                        else:
+                            session_logger.warning(f"未能获取Plex音乐库实例")
+                    else:
+                        session_logger.warning(f"PlexService未初始化")
+                except RuntimeError as e:
+                    session_logger.warning(f"AutoPlaylistService未初始化: {e}")
+            else:
+                session_logger.warning(f"未能找到session {session_id} 对应的task_id")
+        except Exception as e:
+            session_logger.error(f"自动播放列表处理失败: {e}", exc_info=True)
 
     async def get_item_details_from_db(self, queue_id: int) -> Optional[DownloadQueueItem]:
         """(辅助方法) 从数据库获取单个队列项目的详细信息。"""
