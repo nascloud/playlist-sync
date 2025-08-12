@@ -56,8 +56,7 @@ async def lifespan(app: FastAPI):
     await download_service_instance.initialize_downloader()
     
     # 3. 初始化AutoPlaylistService
-    # 注意：这需要plex_service，但我们暂时无法直接获取
-    # 我们将在SyncService中创建并设置它
+    await sync_service_instance.initialize_auto_playlist_service()
     
     # 4. 将完全初始化的实例设置为全局单例
     set_download_service(download_service_instance)

@@ -22,6 +22,29 @@ class SyncService:
         # 初始化AutoPlaylistService
         self.auto_playlist_service = None
     
+    async def initialize_auto_playlist_service(self):
+        """初始化AutoPlaylistService"""
+        try:
+            # 如果还没有PlexService实例，尝试初始化一个默认的
+            if self.plex_service is None:
+                # 获取默认服务器设置（ID为1的服务器）
+                settings = await asyncio.to_thread(self._get_settings_sync, 1)
+                if settings and settings['type'] == 'plex':
+                    url = settings['url']
+                    encrypted_token = settings['token']
+                    verify_ssl = settings.get('verify_ssl', True)
+                    token = await asyncio.to_thread(decrypt_token, encrypted_token)
+                    self.plex_service = await PlexService.create_instance(url, token, verify_ssl)
+            
+            # 初始化AutoPlaylistService
+            if self.auto_playlist_service is None and self.plex_service is not None:
+                self.auto_playlist_service = AutoPlaylistService(plex_service=self.plex_service, task_service=TaskService())
+                AutoPlaylistService.set_instance(self.auto_playlist_service)
+                logger.info("AutoPlaylistService initialized successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize AutoPlaylistService: {e}")
+            # 不抛出异常，因为AutoPlaylistService是可选功能
+    
     async def _initialize_plex_service(self, server_id: int):
         """(异步) 根据 server_id 获取设置并初始化对应的媒体服务客户端"""
         
