@@ -490,12 +490,12 @@ const DashboardPage: React.FC = () => {
         {previewData && (
           <div className="space-y-4">
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-medium text-gray-900">歌单标题</h3>
-              <p className="mt-1 text-gray-700">{previewData.title}</p>
+              <h3 className="block text-sm font-medium text-gray-700">歌单标题</h3>
+              <p className="mt-1 text-lg font-medium text-gray-900">{previewData.title}</p>
             </div>
             <div className="bg-gray-50 p-4 rounded-lg">
-              <h3 className="font-medium text-gray-900">歌曲数量</h3>
-              <p className="mt-1 text-gray-700">{previewData.track_count} 首</p>
+              <h3 className="block text-sm font-medium text-gray-700">歌曲数量</h3>
+              <p className="mt-1 text-lg font-medium text-gray-900">{previewData.track_count} 首</p>
             </div>
             <p className="text-sm text-gray-500">请确认以上歌单信息是否正确，确认后将添加到同步列表。</p>
           </div>
