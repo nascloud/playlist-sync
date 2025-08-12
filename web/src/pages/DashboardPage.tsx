@@ -8,7 +8,6 @@ import CronGenerator from '../components/CronGenerator';
 import { Task, UnmatchedTrack, SyncProgress, Server } from '../types';
 import TaskCard from '../components/TaskCard';
 import { PlusCircle } from 'lucide-react';
-import TimeDisplay from '../components/TimeDisplay';
 
 const DashboardPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
