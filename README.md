@@ -1,142 +1,194 @@
 # Plex Playlist Sync
 
-Plex Playlist Sync 是一个用于将网易云音乐、QQ音乐等外部音乐平台的歌单自动同步到您的 Plex 媒体服务器的工具。本项目由一个 FastAPI 后端和一个 React 前端组成。
+Plex Playlist Sync 是一个强大的音乐同步工具，可将网易云音乐、QQ音乐等平台的歌单自动同步到您的 Plex 媒体服务器。该工具不仅支持歌单同步，还提供智能下载和播放列表管理功能。
 
-## 功能特性
+## 🌟 核心功能
 
-- 支持从网易云音乐和QQ音乐同步歌单。
-- 自动、定时同步播放列表。
-- 提供 Web 界面，方便管理。
-- 安全存储您的 Plex 凭据。
-- **智能播放列表管理**：自动将新下载或手动添加的音乐归类到对应的 Plex 播放列表中。
+### 歌单同步
+- **多平台支持**：网易云音乐、QQ音乐
+- **定时同步**：可配置的定时任务，自动保持歌单更新
+- **智能解析**：自动补全缺失的歌曲信息（如专辑信息）
 
-## 项目结构
+### 智能下载
+- **三种下载方式**：
+  - 一键下载全部缺失歌曲
+  - 单个歌曲下载
+  - 自动下载（同步后自动开始）
+- **智能信息补全**：在下载阶段自动补全歌曲信息，避免触发平台风控
+- **队列管理**：完整的下载队列管理，支持暂停、重试等操作
+- **并发控制**：智能并发下载，避免系统过载
+
+### 智能播放列表
+- **自动归类**：新下载或手动添加的音乐自动归类到对应播放列表
+- **双重触发**：
+  - 下载完成后立即处理
+  - 定期扫描（默认每30分钟）
+- **智能匹配**：优化的字符串标准化和权重分配算法
+
+## 🏗️ 项目架构
 
 ```
 plex-playlist-sync/
 ├── backend/              # FastAPI 后端应用
+│   ├── api/              # REST API 端点
+│   ├── core/             # 核心配置和数据库
+│   ├── models/           # 数据模型
+│   ├── schemas/          # Pydantic 数据模式
+│   ├── services/         # 核心业务逻辑
+│   ├── utils/            # 工具函数
+│   └── main.py           # 应用入口
 ├── web/                  # React 前端应用
 ├── docs/                 # 项目文档
-└── docker-compose.yml    # Docker Compose 配置
+└── docker-compose.yml    # Docker 部署配置
 ```
 
-## 安装指南
+## 🚀 快速开始
 
-### 环境准备
-
+### 环境要求
 - Git
 - Python 3.9+ 及 [uv](https://github.com/astral-sh/uv)
 - Node.js 和 npm
-- Docker (用于容器化部署)
+- Docker (可选，用于容器化部署)
 
-### 安全与环境配置
+### 安装步骤
 
-在首次启动应用前，您必须配置必要的环境变量。我们提供了一个模板文件 `backend/.env.example` 来帮助您完成配置。
+1. **克隆项目**：
+   ```bash
+   git clone https://github.com/nascloud/playlist-sync.git
+   cd playlist-sync
+   ```
 
-1.  **创建您的 `.env` 文件**:
-    将模板文件复制一份，并重命名为 `.env`：
-    ```bash
-    cp backend/.env.example backend/.env
-    ```
+2. **配置环境变量**：
+   ```bash
+   cp backend/.env.example backend/.env
+   # 编辑 backend/.env 文件，填入必要配置
+   ```
 
-2.  **编辑 `.env` 文件**:
-    打开 `backend/.env` 文件，并根据指引填入您的个人信息。
+3. **后端设置**：
+   ```bash
+   cd backend
+   uv sync
+   uv run alembic upgrade head
+   ```
 
-    - `SECRET_KEY`: 用于保护会话和 token 的一个长而随机的字符串。您可以使用以下命令生成一个安全的密钥：
-      ```bash
-      openssl rand -hex 32
-      ```
-    - `APP_PASSWORD`: 用于登录 Web 界面的密码。
-    - `PLEX_URL`: 您的 Plex 服务器的完整 URL。
-    - `PLEX_TOKEN`: 您的 Plex 访问令牌。
-    - `DOWNLOADER_API_KEY`: 下载器所需的 API 密钥。
-    - `DOWNLOAD_PATH`: 下载文件的存放路径。
+4. **前端设置**：
+   ```bash
+   cd web
+   npm install
+   ```
 
-> **重要提示**: 必须将 `SECRET_KEY` 和 `APP_PASSWORD` 填写完整，否则应用将无法启动。
+### 启动应用
 
-### 后端设置
+#### 开发模式
+```bash
+# 后端 (在 backend 目录)
+uvicorn main:app --reload --host 0.0.0.0 --port 3001
 
-1.  **进入 `backend` 目录**:
-    ```bash
-    cd backend
-    ```
+# 前端 (在 web 目录)
+npm run dev
+```
 
-2.  **安装 Python 依赖**:
-    ```bash
-    uv sync
-    ```
-
-3.  **数据库迁移**:
-    在首次启动或数据库模型更新后，运行迁移命令：
-    ```bash
-    uv run alembic upgrade head
-    ```
-
-### 前端设置
-
-1.  **进入 `web` 目录**:
-    ```bash
-    cd web
-    ```
-
-2.  **安装 Node.js 依赖**:
-    ```bash
-    npm install
-    ```
-
-## 使用方法
-
-### 启动开发服务器
-
-- **后端服务** (在 `backend` 目录下):
-  ```bash
-  uvicorn main:app --reload --host 0.0.0.0 --port 3001
-  ```
-  API 将在 `http://localhost:3001` 上可用。
-
-- **前端应用** (在 `web` 目录下):
-  ```bash
-  npm run dev
-  ```
-  Web 界面将在 `http://localhost:5173` 上可用。
-
-### 使用 Docker
-
-使用 Docker Compose 可以一键启动整个应用:
-
+#### 生产模式 (Docker)
 ```bash
 docker-compose up --build
 ```
-> **注意**: 请确保您已经在 `backend/.env` 文件中完成了所有必要的配置。Docker Compose 会自动加载这些配置。
 
-## 智能播放列表功能
+## 🛠️ 核心服务
 
-本项目新增了智能播放列表功能，能够自动将新下载或手动添加的音乐归类到对应的 Plex 播放列表中。
+### PlaylistService
+负责从音乐平台解析歌单信息，支持：
+- 网易云音乐歌单解析
+- QQ音乐歌单解析（含信息补全）
 
-### 工作原理
+### DownloadService
+提供完整的下载功能：
+- 三种下载触发方式
+- 并发下载控制
+- 下载队列管理
+- 错误处理和重试机制
 
-1. **下载后自动归类**：当一个下载任务完成时，系统会自动扫描新添加的音轨，并将其添加到对应任务的 Plex 播放列表中。
-2. **定期扫描归类**：系统每30分钟会扫描一次 Plex 音乐库，查找新添加的音轨，并将其归类到所有匹配的任务播放列表中。
+### AutoPlaylistService
+智能播放列表管理：
+- 新音乐自动归类
+- 智能匹配算法
+- 双重触发机制
 
-### 优势
+### PlexService
+与 Plex 媒体服务器交互：
+- 音乐库管理
+- 播放列表创建/更新
+- 媒体扫描触发
 
-- **及时性**：下载后立即处理，确保新音乐能快速归类。
-- **全面性**：定期扫描覆盖了手动添加等场景，确保不遗漏。
-- **准确性**：基于缺失列表的匹配，提高了归类的准确性。
-- **智能匹配**：采用优化的字符串标准化和智能权重分配，支持中英文括号处理，提高匹配成功率。
+## 📊 数据模型
 
-更多技术细节请参阅 [智能播放列表功能设计文档](./docs/auto_playlist_feature.md)。
+### 任务管理 (tasks)
+- 歌单同步任务
+- 定时调度配置
+- 同步状态跟踪
 
-## 贡献指南
+### 下载管理
+- 下载设置 (download_settings)
+- 下载队列 (download_queue)
+- 下载会话 (download_sessions)
 
-欢迎参与贡献！如果您有任何想法、建议或发现 bug，请随时开启一个 Issue 或提交 Pull Request。
+## 🔧 配置说明
 
-1.  Fork 本仓库。
-2.  创建您的新分支 (`git checkout -b feature/AmazingFeature`)。
-3.  提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
-4.  将代码推送到您的分支 (`git push origin feature/AmazingFeature`)。
-5.  开启一个 Pull Request。
+### 必需配置
+- `SECRET_KEY`：应用安全密钥
+- `APP_PASSWORD`：Web界面登录密码
+- `PLEX_URL`：Plex服务器地址
+- `PLEX_TOKEN`：Plex访问令牌
 
-## 许可证
+### 下载配置
+- `DOWNLOADER_API_KEY`：下载器API密钥
+- `DOWNLOAD_PATH`：下载文件存储路径
+- `preferred_quality`：首选音质
+- `max_concurrent_downloads`：最大并发下载数
 
-本项目采用 MIT 许可证。详情请参阅 `LICENSE` 文件。
+## 🎯 使用指南
+
+### 1. 创建同步任务
+1. 在Web界面添加新任务
+2. 输入歌单URL
+3. 配置同步计划
+
+### 2. 下载缺失歌曲
+1. 查看任务详情中的缺失歌曲列表
+2. 选择下载方式：
+   - 点击"下载全部缺失"按钮
+   - 点击单个歌曲的"下载"按钮
+   - 启用自动下载功能
+
+### 3. 智能播放列表
+系统会自动将新下载的音乐归类到对应播放列表，无需手动操作。
+
+## 📚 技术文档
+
+详细技术文档请参阅 [docs](./docs) 目录：
+
+- [智能播放列表功能设计](./docs/auto_playlist_feature.md)
+- [下载功能完整设计](./docs/download_feature_design.md)
+- [QQ音乐歌单解析增强](./docs/qq_playlist_enhancement.md)
+- [QQ音乐信息补全](./docs/qq_info_enrichment_during_download.md)
+- [字符串标准化和匹配优化](./docs/string_normalization_and_matching_fix.md)
+
+## 🤝 贡献指南
+
+欢迎参与贡献！请遵循以下步骤：
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
+3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
+4. 推送到分支 (`git push origin feature/AmazingFeature`)
+5. 开启 Pull Request
+
+## 📄 许可证
+
+本项目采用 MIT 许可证。详情请参阅 [LICENSE](./LICENSE) 文件。
+
+## 🆘 支持
+
+如遇到问题，请：
+1. 查看 [Issues](https://github.com/nascloud/playlist-sync/issues)
+2. 创建新的 Issue 描述问题
+3. 提供详细的错误信息和复现步骤
