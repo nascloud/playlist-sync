@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { DownloadSession, DownloadQueueItem } from '../types';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
+import { ChevronDownIcon, ChevronUpIcon, ArrowPathIcon } from '@heroicons/react/24/solid';
 import { toast } from 'sonner';
 import { fetchFromApi } from '../lib/api';
 
@@ -30,6 +30,20 @@ const apiRequest = async (path: string, method: string, successMessage: string, 
 
 const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUpdate, onViewLogs }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleRetryItem = async (itemId: number) => {
+    try {
+      const data = await fetchFromApi(`/download/session/item/${itemId}/retry`, { method: 'POST' });
+      if (data.success) {
+        toast.success(data.message);
+        onUpdate();
+      } else {
+        toast.error(data.message || '重试失败');
+      }
+    } catch (error: any) {
+      toast.error(error.message || '请求失败，请检查网络连接。');
+    }
+  };
 
   const handleCardClick = () => {
     setIsExpanded(!isExpanded);
@@ -63,6 +77,21 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
     onViewLogs(session.id);
   };
 
+  const handleRetryFailed = async (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    try {
+      const data = await fetchFromApi(`/download/session/${session.id}/retry-failed`, { method: 'POST' });
+      if (data.success) {
+        toast.success(data.message);
+        onUpdate();
+      } else {
+        toast.error(data.message || '重试失败');
+      }
+    } catch (error: any) {
+      toast.error(error.message || '请求失败，请检查网络连接。');
+    }
+  };
+
   const progress = session.total_songs > 0 ? (session.success_count / session.total_songs) * 100 : 0;
 
   return (
@@ -94,6 +123,15 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
           {session.status === 'paused' && (
             <button onClick={handleResume} className="text-sm bg-green-500 text-white px-3 py-1 rounded">恢复</button>
           )}
+          {session.failed_count > 0 && (
+            <button 
+              onClick={handleRetryFailed} 
+              className="text-sm bg-blue-500 text-white px-3 py-1 rounded flex items-center"
+            >
+              <ArrowPathIcon className="h-4 w-4 mr-1" />
+              重试失败({session.failed_count})
+            </button>
+          )}
           <button onClick={handleDelete} className="text-sm bg-red-500 text-white px-3 py-1 rounded">删除</button>
         </div>
       </div>
@@ -116,8 +154,30 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
           <ul className="space-y-2 text-sm">
             {session.items && session.items.map((item: DownloadQueueItem) => (
               <li key={item.id} className="flex justify-between items-center p-2 bg-gray-50 rounded">
-                <span>{item.title} - {item.artist}</span>
-                <span className="font-mono text-xs px-2 py-1 bg-gray-200 rounded">{item.status}</span>
+                <span className="flex-1">{item.title} - {item.artist}</span>
+                <div className="flex items-center space-x-2">
+                  <span className={`font-mono text-xs px-2 py-1 rounded ${
+                    item.status === 'success' ? 'bg-green-200 text-green-800' :
+                    item.status === 'failed' ? 'bg-red-200 text-red-800' :
+                    item.status === 'pending' ? 'bg-yellow-200 text-yellow-800' :
+                    item.status === 'downloading' ? 'bg-blue-200 text-blue-800' :
+                    'bg-gray-200 text-gray-800'
+                  }`}>
+                    {item.status}
+                  </span>
+                  {item.status === 'failed' && (
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRetryItem(item.id);
+                      }}
+                      className="text-xs bg-blue-500 text-white px-2 py-1 rounded flex items-center hover:bg-blue-600"
+                    >
+                      <ArrowPathIcon className="h-3 w-3 mr-1" />
+                      重试
+                    </button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

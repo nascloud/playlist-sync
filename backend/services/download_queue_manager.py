@@ -313,5 +313,16 @@ class DownloadQueueManager:
         logger.info(f"清除了 {count} 个已完成的会话。")
         return count
         
+    async def retry_failed_items_in_session(self, session_id: int):
+        """重试一个会话中所有失败的项目。"""
+        loop = asyncio.get_running_loop()
+        count = await loop.run_in_executor(
+            None, download_db_service.retry_failed_items_in_session, session_id
+        )
+        if count > 0:
+            print(f"会话 {session_id} 中的 {count} 个失败项目已被重新加入队列。")
+            self.start_processing() # 确保队列正在运行
+        return count
+        
 # 实例化管理器，以便在应用的其他部分导入和使用
 download_queue_manager = DownloadQueueManager()

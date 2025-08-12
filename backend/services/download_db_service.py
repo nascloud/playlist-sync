@@ -285,6 +285,20 @@ class DownloadDBService:
         
         return self._execute_in_thread(_delete_completed)
 
+    def retry_failed_items_in_session(self, session_id: int):
+        """重试一个会话中所有失败的项目。"""
+        def _retry_failed(conn: sqlite3.Connection, session_id: int):
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE download_queue SET status = 'pending', error_message = NULL WHERE session_id = ? AND status = 'failed'",
+                (session_id,)
+            )
+            count = cursor.rowcount
+            conn.commit()
+            return count
+
+        return self._execute_in_thread(_retry_failed, session_id)
+
     def pause_session_and_items(self, session_id: int):
         """在一个事务中暂停会话及其所有待处理的项目。"""
         def _pause(conn: sqlite3.Connection, session_id: int):

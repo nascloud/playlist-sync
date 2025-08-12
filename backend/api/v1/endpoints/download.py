@@ -173,4 +173,40 @@ async def clear_completed_downloads(_: dict = {}):
     count = await download_queue_manager.clear_completed()
     return DownloadActionResponse(success=True, message=f"成功清除了 {count} 个已完成的项目。")
 
+@router.post("/session/{session_id}/retry-failed", response_model=DownloadActionResponse)
+async def retry_failed_items(session_id: int):
+    """重试一个会话中所有失败的下载项目。"""
+    try:
+        count = await download_queue_manager.retry_failed_items_in_session(session_id)
+        if count > 0:
+            return DownloadActionResponse(
+                success=True, 
+                message=f"已将 {count} 个失败的项目重新加入下载队列。"
+            )
+        else:
+            return DownloadActionResponse(
+                success=True,
+                message="没有失败的项目需要重试。"
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重试失败项目时出错: {str(e)}")
+
+@router.post("/session/item/{item_id}/retry", response_model=DownloadActionResponse)
+async def retry_single_item(item_id: int):
+    """重试单个失败的下载项目。"""
+    try:
+        success = await download_queue_manager.retry_item(item_id)
+        if success:
+            return DownloadActionResponse(
+                success=True,
+                message="项目已重新加入下载队列。"
+            )
+        else:
+            return DownloadActionResponse(
+                success=False,
+                message="无法重试该项目。项目可能不是失败状态。"
+            )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"重试项目时出错: {str(e)}")
+
 
