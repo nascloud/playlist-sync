@@ -37,14 +37,14 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
 
   const handlePause = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (await apiRequest(`/api/download/session/${session.id}/pause`, 'POST', '会话已暂停', '暂停失败')) {
+    if (await apiRequest(`/download/session/${session.id}/pause`, 'POST', '会话已暂停', '暂停失败')) {
       onUpdate();
     }
   };
 
   const handleResume = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (await apiRequest(`/api/download/session/${session.id}/resume`, 'POST', '会话已恢复', '恢复失败')) {
+    if (await apiRequest(`/download/session/${session.id}/resume`, 'POST', '会话已恢复', '恢复失败')) {
       onUpdate();
     }
   };
@@ -52,7 +52,7 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
   const handleDelete = async (e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
     if (window.confirm(`确定要删除会话 "${session.task_name || '该会话'}" 吗？此操作不可逆。`)) {
-      if (await apiRequest(`/api/download/session/${session.id}`, 'DELETE', '会话已删除', '删除失败')) {
+      if (await apiRequest(`/download/session/${session.id}`, 'DELETE', '会话已删除', '删除失败')) {
         onUpdate();
       }
     }
