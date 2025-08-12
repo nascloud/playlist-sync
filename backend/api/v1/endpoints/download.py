@@ -73,7 +73,19 @@ async def get_download_settings() -> Any:
 @router.post("/download-settings", response_model=DownloadSettings)
 async def save_download_settings(settings_in: DownloadSettingsCreate) -> Any:
     """保存或更新下载设置。"""
-    return SettingsService.save_download_settings(settings_in)
+    # 保存设置
+    saved_settings = SettingsService.save_download_settings(settings_in)
+    
+    # 如果设置了新的扫描间隔，更新调度器
+    if hasattr(settings_in, 'scan_interval_minutes') and settings_in.scan_interval_minutes:
+        try:
+            from utils.scheduler import get_scheduler
+            scheduler = get_scheduler()
+            scheduler.update_scan_interval(settings_in.scan_interval_minutes)
+        except Exception as e:
+            logging.error(f"更新调度器扫描间隔时出错: {e}")
+    
+    return saved_settings
 
 @router.post("/download-settings/test", response_model=TestConnectionResponse)
 async def test_download_connection(request: TestConnectionRequest) -> Any:

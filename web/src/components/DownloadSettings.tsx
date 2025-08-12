@@ -21,6 +21,8 @@ const DownloadSettings: React.FC<DownloadSettingsProps> = ({ settings, onSave, o
     download_lyrics: true,
     auto_download: false,
     max_concurrent_downloads: 3,
+    log_retention_days: 30,
+    scan_interval_minutes: 30
   });
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
@@ -41,7 +43,12 @@ const DownloadSettings: React.FC<DownloadSettingsProps> = ({ settings, onSave, o
         const checkbox = e.target as HTMLInputElement;
         setFormData(prev => ({ ...prev, [name]: checkbox.checked }));
     } else {
-        setFormData(prev => ({ ...prev, [name]: value }));
+        // 处理数字输入
+        if (name === 'max_concurrent_downloads' || name === 'log_retention_days' || name === 'scan_interval_minutes') {
+            setFormData(prev => ({ ...prev, [name]: parseInt(value, 10) || 0 }));
+        } else {
+            setFormData(prev => ({ ...prev, [name]: value }));
+        }
     }
   };
 
@@ -152,6 +159,36 @@ const DownloadSettings: React.FC<DownloadSettingsProps> = ({ settings, onSave, o
             value={formData.max_concurrent_downloads}
             onChange={handleChange}
           />
+      </div>
+      
+      {/* 日志保留天数 */}
+      <div>
+          <label htmlFor="log_retention_days">日志保留天数</label>
+          <input
+            id="log_retention_days"
+            name="log_retention_days"
+            type="number"
+            min="1"
+            value={formData.log_retention_days}
+            onChange={handleChange}
+          />
+      </div>
+      
+      {/* 扫描间隔（分钟） */}
+      <div>
+          <label htmlFor="scan_interval_minutes">扫描间隔（分钟）</label>
+          <input
+            id="scan_interval_minutes"
+            name="scan_interval_minutes"
+            type="number"
+            min="5"
+            max="1440"
+            value={formData.scan_interval_minutes}
+            onChange={handleChange}
+          />
+          <p className="text-sm text-gray-500 mt-1">
+            定期扫描新音乐的间隔时间，范围：5-1440分钟（1天）
+          </p>
       </div>
 
       {/* 提交按钮 */}

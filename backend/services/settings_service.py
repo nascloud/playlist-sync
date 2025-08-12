@@ -164,7 +164,9 @@ class SettingsService:
             preferred_quality=db_settings.get('preferred_quality', 'high'),
             download_lyrics=bool(int(db_settings.get('download_lyrics', 0))),
             auto_download=bool(int(db_settings.get('auto_download', 0))),
-            max_concurrent_downloads=int(db_settings.get('max_concurrent_downloads', 3))
+            max_concurrent_downloads=int(db_settings.get('max_concurrent_downloads', 3)),
+            log_retention_days=int(db_settings.get('log_retention_days', 30)),
+            scan_interval_minutes=int(db_settings.get('scan_interval_minutes', 30))
         )
 
     @staticmethod
@@ -182,6 +184,8 @@ class SettingsService:
                 "download_lyrics": int(settings.download_lyrics),
                 "auto_download": int(settings.auto_download),
                 "max_concurrent_downloads": settings.max_concurrent_downloads,
+                "log_retention_days": settings.log_retention_days,
+                "scan_interval_minutes": settings.scan_interval_minutes
             }
 
             cursor = conn.cursor()

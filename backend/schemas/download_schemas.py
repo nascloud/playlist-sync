@@ -13,6 +13,7 @@ class DownloadSettingsBase(BaseModel):
     auto_download: bool = Field(False, title="全局自动下载", description="是否在同步后自动下载所有缺失歌曲")
     max_concurrent_downloads: int = Field(3, ge=1, le=10, title="最大并发下载数", description="同时进行的最大下载任务数量")
     log_retention_days: int = Field(30, ge=1, title="日志保留天数", description="下载日志文件保留的最长天数")
+    scan_interval_minutes: int = Field(30, ge=5, le=1440, title="扫描间隔（分钟）", description="定期扫描新音乐的间隔时间（分钟）")
 
 class DownloadSettingsCreate(DownloadSettingsBase):
     """

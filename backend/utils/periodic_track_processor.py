@@ -2,6 +2,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from services.sync_service import SyncService
+from services.settings_service import SettingsService
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +13,10 @@ async def periodic_new_track_processing(sync_service: SyncService):
     """
     logger.info("[定期扫描] 开始执行新音轨处理任务...")
     try:
+        # 获取扫描间隔设置
+        settings = SettingsService.get_download_settings()
+        scan_interval = settings.scan_interval_minutes if settings and settings.scan_interval_minutes else 30
+        
         # 获取AutoPlaylistService实例
         auto_playlist_service = sync_service.auto_playlist_service
         if not auto_playlist_service:
@@ -30,11 +35,11 @@ async def periodic_new_track_processing(sync_service: SyncService):
             logger.warning("[定期扫描] 未能获取Plex音乐库")
             return
             
-        # 处理最近1小时内添加的音轨
-        since_time = datetime.now().replace(microsecond=0) - timedelta(hours=1)
+        # 处理最近scan_interval分钟内添加的音轨
+        since_time = datetime.now().replace(microsecond=0) - timedelta(minutes=scan_interval)
         await auto_playlist_service.process_newly_added_tracks(music_library, since_time)
         
-        logger.info("[定期扫描] 新音轨处理任务完成")
+        logger.info(f"[定期扫描] 新音轨处理任务完成（扫描间隔: {scan_interval}分钟）")
         
     except Exception as e:
         logger.error(f"[定期扫描] 处理新音轨时出错: {e}", exc_info=True)

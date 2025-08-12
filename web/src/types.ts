@@ -45,6 +45,8 @@ export interface DownloadSettingsData {
   download_lyrics: boolean;
   auto_download: boolean;
   max_concurrent_downloads: number;
+  log_retention_days: number;
+  scan_interval_minutes: number;
 }
 
 export interface DownloadSession {

@@ -363,18 +363,42 @@ class TaskScheduler:
             replace_existing=True
         )
         
-        # 添加定期新音轨处理任务（每30分钟执行一次）
+        # 添加定期新音轨处理任务（使用可配置的间隔，默认每30分钟执行一次）
+        settings = SettingsService.get_download_settings()
+        scan_interval = settings.scan_interval_minutes if settings and settings.scan_interval_minutes else 30
+        
         self.scheduler.add_job(
             periodic_new_track_processing,
             'interval',
-            minutes=30,
+            minutes=scan_interval,
             args=[self.sync_service],
             id='periodic_new_track_processing',
             replace_existing=True
         )
         
         self.scheduler.start()
-        logger.info("[调度器] 任务调度器已启动，并已安排日志清理任务和定期新音轨处理任务。")
+        logger.info(f"[调度器] 任务调度器已启动，并已安排日志清理任务和定期新音轨处理任务（间隔: {scan_interval}分钟）。")
+        
+    def update_scan_interval(self, minutes: int):
+        """更新定期扫描任务的间隔"""
+        try:
+            # 移除旧的作业
+            self.scheduler.remove_job('periodic_new_track_processing')
+        except Exception:
+            # 如果作业不存在，忽略错误
+            pass
+            
+        # 添加新的作业
+        self.scheduler.add_job(
+            periodic_new_track_processing,
+            'interval',
+            minutes=minutes,
+            args=[self.sync_service],
+            id='periodic_new_track_processing',
+            replace_existing=True
+        )
+        
+        logger.info(f"[调度器] 定期新音轨处理任务间隔已更新为 {minutes} 分钟。")
     
     def shutdown(self):
         """关闭调度器"""
