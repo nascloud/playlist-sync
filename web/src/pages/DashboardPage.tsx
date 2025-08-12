@@ -11,29 +11,6 @@ import { Task, UnmatchedTrack, SyncProgress, Server } from '../types';
 import TaskCard from '../components/TaskCard';
 import { PlusCircle } from 'lucide-react';
 
-// A small component to render time in a user-friendly format
-export const TimeDisplay: React.FC<{ timeString: string | null }> = ({ timeString }) => {
-  if (!timeString) {
-    return <span className="font-semibold text-gray-500">从未</span>;
-  }
-  try {
-    const date = new Date(timeString);
-    const absoluteTime = format(date, 'yyyy-MM-dd HH:mm:ss', { locale: zhCN });
-    const relativeTime = formatDistanceToNow(date, { addSuffix: true, locale: zhCN });
-    return <span className="font-semibold text-gray-800" title={absoluteTime}>{relativeTime}</span>;
-  } catch (e) {
-    return <span className="font-semibold text-red-500">日期无效</span>;
-  }
-};
-
-// 获取API请求头
-const getHeaders = () => {
-  const token = localStorage.getItem('token');
-  return {
-    'Authorization': `Bearer ${token}`,
-  };
-};
-
 const DashboardPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
@@ -142,41 +119,20 @@ const DashboardPage: React.FC = () => {
 
     try {
       // 第一步：预览歌单信息
-      const previewResponse = await fetch('/api/preview-playlist', {
+      const previewData = await fetchFromApi('/preview-playlist', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getHeaders(),
-        },
         body: JSON.stringify({
           playlist_url: playlistUrl,
           platform: platform
         }),
       });
 
-      const previewData = await previewResponse.json();
-
-      if (!previewResponse.ok) {
-        // 预览失败，显示详细错误信息
-        let errorMsg = '解析歌单失败，请检查输入。';
-        if (previewData.detail) {
-          if (typeof previewData.detail === 'string') {
-            errorMsg = previewData.detail;
-          } else if (Array.isArray(previewData.detail)) {
-            errorMsg = previewData.detail.map((e: any) => `${e.loc.join('.')} - ${e.msg}`).join('; ');
-          }
-        }
-        setAddModalError(errorMsg);
-        setIsAdding(false);
-        return;
-      }
-
       // 预览成功，显示歌单信息并确认添加
       setPreviewData(previewData);
       setIsPreviewModalOpen(true);
       setIsAdding(false);
-    } catch (err) {
-      setAddModalError('无法连接到后端服务。');
+    } catch (err: any) {
+      setAddModalError(err.message || '无法连接到后端服务。');
       setIsAdding(false);
     }
   };
@@ -189,12 +145,8 @@ const DashboardPage: React.FC = () => {
 
     try {
       // 创建同步任务（传递预览数据以避免重复解析）
-      const createResponse = await fetch('/api/tasks', {
+      const createData = await fetchFromApi('/tasks', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getHeaders(),
-        },
         body: JSON.stringify({
           name: newPlaylistName || previewData.title, // 使用用户输入的名称或歌单标题
           playlist_url: playlistUrl,
@@ -205,9 +157,7 @@ const DashboardPage: React.FC = () => {
         }),
       });
 
-      const createData = await createResponse.json();
-
-      if (createResponse.ok && createData.id) {
+      if (createData.id) {
         // 成功创建任务
         setIsAddModalOpen(false);
         setNewPlaylistName('');
@@ -228,8 +178,8 @@ const DashboardPage: React.FC = () => {
         }
         setAddModalError(errorMsg);
       }
-    } catch (err) {
-      setAddModalError('无法连接到后端服务。');
+    } catch (err: any) {
+      setAddModalError(err.message || '无法连接到后端服务。');
     } finally {
       setIsAdding(false);
     }
