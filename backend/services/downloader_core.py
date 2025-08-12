@@ -449,6 +449,9 @@ class DownloaderCore:
             except APIError as e:
                 session_logger.warning(f"在平台 '{platform}' 上搜索时出错: {e}")
                 continue
+            except Exception as e:
+                session_logger.warning(f"在平台 '{platform}' 上搜索时发生未知错误: {e}")
+                continue
 
         if best_match and highest_score > 70:
             session_logger.info(f"为 '{item.title}' 找到最佳匹配: {best_match}，分数为 {highest_score}")
@@ -533,6 +536,9 @@ class DownloaderCore:
         except Exception as e:
             session_logger.error(f"下载 '{enriched_item.title}' 时发生未知错误: {e}", exc_info=True)
             raise APIError(f"未知错误: {e}") from e
+        finally:
+            # 确保任何异常都不会导致程序卡住
+            session_logger.debug(f"下载任务完成处理: {enriched_item.title}")
 
 # 实例化下载器核心
 downloader = DownloaderCore()

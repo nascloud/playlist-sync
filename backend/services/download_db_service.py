@@ -238,7 +238,7 @@ class DownloadDBService:
         def _retry_item(conn: sqlite3.Connection, item_id: int):
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE download_queue SET status = 'pending', error_message = NULL WHERE id = ? AND status = 'failed'",
+                "UPDATE download_queue SET status = 'pending', error_message = NULL, retry_count = 0 WHERE id = ? AND status = 'failed'",
                 (item_id,)
             )
             conn.commit()
@@ -282,7 +282,7 @@ class DownloadDBService:
         def _retry_failed(conn: sqlite3.Connection, session_id: int):
             cursor = conn.cursor()
             cursor.execute(
-                "UPDATE download_queue SET status = 'pending', error_message = NULL WHERE session_id = ? AND status = 'failed'",
+                "UPDATE download_queue SET status = 'pending', error_message = NULL, retry_count = 0 WHERE session_id = ? AND status = 'failed'",
                 (session_id,)
             )
             count = cursor.rowcount

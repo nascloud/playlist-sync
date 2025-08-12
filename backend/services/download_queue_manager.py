@@ -176,6 +176,17 @@ class DownloadQueueManager:
                 "failed",
                 error_msg,
             )
+        except BaseException as e:
+            # 捕获所有异常，包括系统退出等，确保状态被正确更新
+            error_msg = f"下载过程中发生严重错误: {str(e)}"
+            session_logger.error(f"下载严重错误: {title} (ID: {queue_id}), 原因: {error_msg}", exc_info=True)
+            await asyncio.get_running_loop().run_in_executor(
+                None,
+                download_db_service.update_queue_item_status,
+                queue_id,
+                "failed",
+                error_msg,
+            )
             
         finally:
             # 检查会话是否已完成，如果已完成则触发自动播放列表处理
@@ -338,6 +349,13 @@ class DownloadQueueManager:
         if success:
             print(f"项目 {item_id} 已被重新加入队列。")
             self.start_processing() # 确保队列正在运行
+        else:
+            # 如果数据库更新失败，尝试获取当前项目状态并记录日志
+            item_details = await self.get_item_details_from_db(item_id)
+            if item_details:
+                logger.warning(f"无法重试项目 {item_id}，当前状态为: {item_details.status}")
+            else:
+                logger.warning(f"无法重试项目 {item_id}，项目不存在或数据库查询失败")
         return success
 
     async def clear_completed(self):
