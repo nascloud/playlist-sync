@@ -112,7 +112,7 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
             ></div>
           </div>
           <p className="text-sm">
-            进度: {session.success_count} / {session.total_songs} | 状态: {session.status}
+            进度: {session.success_count} 成功, {session.failed_count} 失败, {session.total_songs} 总计 | 状态: {session.status}
           </p>
         </div>
         <div className="flex items-center space-x-2 mt-4 sm:mt-0">
