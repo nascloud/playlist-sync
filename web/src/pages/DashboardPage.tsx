@@ -26,6 +26,14 @@ export const TimeDisplay: React.FC<{ timeString: string | null }> = ({ timeStrin
   }
 };
 
+// 获取API请求头
+const getHeaders = () => {
+  const token = localStorage.getItem('token');
+  return {
+    'Authorization': `Bearer ${token}`,
+  };
+};
+
 const DashboardPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [servers, setServers] = useState<Server[]>([]);
@@ -46,6 +54,10 @@ const DashboardPage: React.FC = () => {
   const [newSyncSchedule, setNewSyncSchedule] = useState('');
   const [taskAutoDownload, setTaskAutoDownload] = useState(false);
   const [syncingTaskId, setSyncingTaskId] = useState<number | null>(null);
+  
+  // Preview state
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+  const [previewData, setPreviewData] = useState<{title: string, track_count: number} | null>(null);
   
   // Expandable row state
   const [expandedTaskId, setExpandedTaskId] = useState<number | null>(null);
@@ -129,30 +141,90 @@ const DashboardPage: React.FC = () => {
     setIsAdding(true);
 
     try {
-      const data = await fetchFromApi('/tasks', {
+      // 第一步：预览歌单信息
+      const previewResponse = await fetch('/api/preview-playlist', {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getHeaders(),
+        },
         body: JSON.stringify({
-          name: newPlaylistName, // 后端会处理空名称的情况
           playlist_url: playlistUrl,
-          platform: platform,
-          server_id: selectedServerId,
-          cron_schedule: '0 2 * * *' // Default to daily
+          platform: platform
         }),
       });
 
-      if (data.success) {
+      const previewData = await previewResponse.json();
+
+      if (!previewResponse.ok) {
+        // 预览失败，显示详细错误信息
+        let errorMsg = '解析歌单失败，请检查输入。';
+        if (previewData.detail) {
+          if (typeof previewData.detail === 'string') {
+            errorMsg = previewData.detail;
+          } else if (Array.isArray(previewData.detail)) {
+            errorMsg = previewData.detail.map((e: any) => `${e.loc.join('.')} - ${e.msg}`).join('; ');
+          }
+        }
+        setAddModalError(errorMsg);
+        setIsAdding(false);
+        return;
+      }
+
+      // 预览成功，显示歌单信息并确认添加
+      setPreviewData(previewData);
+      setIsPreviewModalOpen(true);
+      setIsAdding(false);
+    } catch (err) {
+      setAddModalError('无法连接到后端服务。');
+      setIsAdding(false);
+    }
+  };
+
+  const handleConfirmAddPlaylist = async () => {
+    if (!previewData || !selectedServerId) return;
+    
+    setIsAdding(true);
+    setIsPreviewModalOpen(false);
+
+    try {
+      // 创建同步任务（传递预览数据以避免重复解析）
+      const createResponse = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getHeaders(),
+        },
+        body: JSON.stringify({
+          name: newPlaylistName || previewData.title, // 使用用户输入的名称或歌单标题
+          playlist_url: playlistUrl,
+          platform: platform,
+          server_id: selectedServerId,
+          cron_schedule: '0 2 * * *', // Default to daily
+          preview_data: previewData // 传递预览数据以避免重复解析
+        }),
+      });
+
+      const createData = await createResponse.json();
+
+      if (createResponse.ok && createData.id) {
+        // 成功创建任务
         setIsAddModalOpen(false);
         setNewPlaylistName('');
         setPlaylistUrl('');
+        setPreviewData(null);
         fetchInitialData();
+        // 显示成功提示
+        toast.success(`成功添加歌单 "${createData.name}" 到同步列表！`);
       } else {
-        let errorMsg = '添加失败，请检查输入。';
-        if (data.detail) {
-            if (typeof data.detail === 'string') {
-                errorMsg = data.detail;
-            } else if (Array.isArray(data.detail)) {
-                errorMsg = data.detail.map((e: any) => `${e.loc.join('.')} - ${e.msg}`).join('; ');
-            }
+        // 处理创建任务时的错误
+        let errorMsg = '添加任务失败，请重试。';
+        if (createData.detail) {
+          if (typeof createData.detail === 'string') {
+            errorMsg = createData.detail;
+          } else if (Array.isArray(createData.detail)) {
+            errorMsg = createData.detail.map((e: any) => `${e.loc.join('.')} - ${e.msg}`).join('; ');
+          }
         }
         setAddModalError(errorMsg);
       }
@@ -410,6 +482,37 @@ const DashboardPage: React.FC = () => {
         <div className="flex justify-end gap-4 mt-6">
           <Button variant="secondary" onClick={handleCloseAddModal}>取消</Button>
           <Button onClick={handleAddPlaylist} loading={isAdding}>添加</Button>
+        </div>
+      </Modal>
+      
+      {/* Preview Confirmation Modal */}
+      <Modal isOpen={isPreviewModalOpen} onClose={() => setIsPreviewModalOpen(false)} title="确认歌单信息">
+        {previewData && (
+          <div className="space-y-4">
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-medium text-gray-900">歌单标题</h3>
+              <p className="mt-1 text-gray-700">{previewData.title}</p>
+            </div>
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="font-medium text-gray-900">歌曲数量</h3>
+              <p className="mt-1 text-gray-700">{previewData.track_count} 首</p>
+            </div>
+            <p className="text-sm text-gray-500">请确认以上歌单信息是否正确，确认后将添加到同步列表。</p>
+          </div>
+        )}
+        <div className="flex justify-end gap-4 mt-6">
+          <Button 
+            variant="secondary" 
+            onClick={() => setIsPreviewModalOpen(false)}
+          >
+            取消
+          </Button>
+          <Button 
+            onClick={handleConfirmAddPlaylist}
+            loading={isAdding}
+          >
+            确认添加
+          </Button>
         </div>
       </Modal>
       

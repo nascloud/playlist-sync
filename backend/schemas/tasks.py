@@ -1,6 +1,6 @@
 from pydantic import BaseModel, validator
 from croniter import croniter
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class TaskBase(BaseModel):
@@ -19,7 +19,7 @@ class TaskBase(BaseModel):
         return v
 
 class TaskCreate(TaskBase):
-    pass
+    preview_data: Optional[Dict[str, Any]] = None
 
 class TaskUpdate(BaseModel):
     cron_schedule: str

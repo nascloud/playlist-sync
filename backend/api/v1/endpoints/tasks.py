@@ -14,9 +14,30 @@ import asyncio
 from utils.progress_manager import progress_manager
 from pydantic import BaseModel
 
+# 预览歌单请求模型
+class PreviewPlaylistRequest(BaseModel):
+    playlist_url: str
+    platform: str
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+@router.post("/preview-playlist")
+async def preview_playlist(request: PreviewPlaylistRequest, download_service: DownloadService = Depends(get_download_service)):
+    """
+    预览歌单信息，返回标题和歌曲数量。
+    """
+    try:
+        sync_service = SyncService(download_service=download_service)
+        playlist_info = await sync_service.preview_playlist(
+            playlist_url=request.playlist_url, 
+            platform=request.platform
+        )
+        return playlist_info
+    except Exception as e:
+        logger.error(f"预览歌单失败: {request.playlist_url}, 错误: {e}")
+        raise HTTPException(status_code=400, detail=f"无法解析歌单: {str(e)}")
 
 @router.get("/tasks", response_model=TaskList)
 async def get_tasks():
@@ -38,18 +59,25 @@ async def create_task(task_data: TaskCreate, download_service: DownloadService =
         # 如果用户没有提供歌单名，则尝试从URL解析
         if not task_data.name:
             try:
-                sync_service = SyncService(download_service=download_service)
-                playlist_info = await sync_service.preview_playlist(
-                    playlist_url=str(task_data.playlist_url), 
-                    platform=task_data.platform
-                )
-                # 使用解析出的标题，如果标题为空则使用默认值
-                task_data.name = playlist_info.get('title') or '新歌单'
+                # 如果前端已经提供了预览数据，则直接使用
+                if task_data.preview_data and task_data.preview_data.get('title'):
+                    task_data.name = task_data.preview_data['title']
+                else:
+                    # 否则重新解析歌单信息
+                    sync_service = SyncService(download_service=download_service)
+                    playlist_info = await sync_service.preview_playlist(
+                        playlist_url=str(task_data.playlist_url), 
+                        platform=task_data.platform
+                    )
+                    # 使用解析出的标题，如果标题为空则使用默认值
+                    task_data.name = playlist_info.get('title') or '新歌单'
             except Exception as e:
                 logger.error(f"为URL {task_data.playlist_url} 解析标题失败: {e}", exc_info=True)
                 raise HTTPException(status_code=400, detail="无法解析歌单链接，请检查链接是否正确或稍后再试。")
 
-        task_id = TaskService.create_task(task_data)
+        # 创建任务时排除preview_data字段，因为它不需要存储到数据库
+        task_create_data = task_data.dict(exclude={'preview_data'})
+        task_id = TaskService.create_task(TaskCreate(**task_create_data))
         new_task = TaskService.get_task_by_id(task_id)
         if not new_task:
             raise HTTPException(status_code=500, detail="创建任务后无法找到该任务。")
