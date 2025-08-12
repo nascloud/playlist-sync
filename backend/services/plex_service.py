@@ -201,10 +201,9 @@ class PlexService:
         :return: 新添加的 Track 对象列表
         """
         try:
-            # 使用 Plex API 的 recentlyAdded 方法获取最近添加的内容
-            # maxresults=0 表示获取所有结果
-            # libtype='track' 限制结果为音轨
-            recently_added = library.recentlyAdded(libtype='track', maxresults=0)
+            # 使用 Plex API 的 recentlyAddedTracks 方法获取最近添加的音轨
+            # 限制返回结果数量以提高性能
+            recently_added = library.recentlyAddedTracks(maxresults=1000)
             
             # 过滤出在指定时间之后添加的音轨
             # 注意：Plex 的 addedAt 是 datetime 类型
