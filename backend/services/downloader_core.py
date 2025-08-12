@@ -494,8 +494,9 @@ class DownloaderCore:
                 return file_path
             except APIError as e:
                 session_logger.warning(f"使用提供的 ID '{song_id}' 直接下载失败: {e}。将回退到搜索模式。")
-                # 直接下载失败，清空 song_id，进入搜索流程
+                # 直接下载失败，清空 song_id 和 platform，进入搜索流程
                 song_id = None
+                platform = None # 同时清空 platform
         
         # 步骤 2: 如果没有 song_id 或直接下载失败，则进行搜索
         if not song_id:
