@@ -2,7 +2,7 @@ import React from 'react';
 import Button from './Button';
 import { Task, UnmatchedTrack, SyncProgress, Server } from '../types';
 import StatusIndicator from './StatusIndicator';
-import { TimeDisplay } from '../pages/DashboardPage';
+import TimeDisplay from './TimeDisplay';
 import ProgressBar from './ProgressBar';
 import IconButton from './IconButton';
 import { Eye, EyeOff, RefreshCw, Settings2, Trash2, Music, Users, Calendar, Clock, Share2, AlertTriangle, DownloadCloud } from 'lucide-react';

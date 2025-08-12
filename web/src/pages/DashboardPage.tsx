@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { zhCN } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { fetchFromApi } from '../lib/api';
 import Button from '../components/Button';
@@ -10,6 +9,7 @@ import CronGenerator from '../components/CronGenerator';
 import { Task, UnmatchedTrack, SyncProgress, Server } from '../types';
 import TaskCard from '../components/TaskCard';
 import { PlusCircle } from 'lucide-react';
+import TimeDisplay from '../components/TimeDisplay';
 
 const DashboardPage: React.FC = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
