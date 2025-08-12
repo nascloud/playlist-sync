@@ -4,6 +4,7 @@ import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 import { toast } from 'sonner';
+import { fetchFromApi } from '../lib/api';
 
 interface DownloadSessionCardProps {
   session: DownloadSession;
@@ -11,19 +12,18 @@ interface DownloadSessionCardProps {
   onViewLogs: (sessionId: number) => void;
 }
 
-const apiRequest = async (url: string, method: string, successMessage: string, errorMessage: string) => {
+const apiRequest = async (path: string, method: string, successMessage: string, errorMessage: string) => {
   try {
-    const response = await fetch(url, { method });
-    const data = await response.json();
-    if (response.ok && data.success) {
+    const data = await fetchFromApi(path, { method });
+    if (data.success) {
       toast.success(successMessage);
       return true;
     } else {
       toast.error(data.message || errorMessage);
       return false;
     }
-  } catch (error) {
-    toast.error('请求失败，请检查网络连接。');
+  } catch (error: any) {
+    toast.error(error.message || '请求失败，请检查网络连接。');
     return false;
   }
 };
