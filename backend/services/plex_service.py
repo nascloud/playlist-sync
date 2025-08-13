@@ -20,7 +20,33 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
-def normalize_string(text: str) -> str:
+def _remove_brackets(text: str) -> str:
+    """移除括号内的内容"""
+    if not text:
+        return ""
+    # 移除括号内的特定内容（支持中英文括号）
+    # 英文括号
+    text = re.sub(r"\(\s*(feat|ft|remix|edit)\s*[^)]*\)", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\[\s*(feat|ft|remix|edit)\s*[^\]]*\]", "", text, flags=re.IGNORECASE)
+    # 中文括号
+    text = re.sub(r"（\s*(feat|ft|remix|edit)\s*[^）]*）", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"［\s*(feat|ft|remix|edit)\s*[^］]*］", "", text, flags=re.IGNORECASE)
+    # 移除所有剩余的括号内容（不管是否包含关键词）
+    text = re.sub(r"\([^)]*\)", "", text)
+    text = re.sub(r"\[[^\]]*\]", "", text)
+    text = re.sub(r"（[^）]*）", "", text)
+    text = re.sub(r"［[^］]*］", "", text)
+    return text
+
+def _remove_keywords(text: str) -> str:
+    """移除关键字"""
+    return re.sub(r"\b(deluxe|explicit|remastered|edition|feat|ft|remix|edit|version)\b", "", text)
+
+def _remove_punctuation(text: str) -> str:
+    """移除标点符号"""
+    return re.sub(r'[^\w\s]', ' ', text)
+
+def _normalize_string(text: str) -> str:
     """标准化字符串，用于模糊比较。"""
     if not text:
         return ""
@@ -29,24 +55,30 @@ def normalize_string(text: str) -> str:
     # 全角转半角
     text = text.translate(str.maketrans('１２３４５６７８９０ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', 
                                         '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'))
-    # 移除括号内的特定内容（支持中英文括号）
-    text = re.sub(r"[（\(](feat|ft|remix|edit)[^)）]*[)）]", "", text)
-    text = re.sub(r"[［\[]](feat|ft|remix|edit)[^\]］]*[\]］]", "", text)
-    # 移除所有剩余的括号内容（不管是否包含关键词）
-    text = re.sub(r"[（\(][^)）]*[)）]", "", text)
-    text = re.sub(r"[［\[][^\]］]*[\]］]", "", text)
+    # 移除括号内的特定内容和所有剩余的括号内容
+    text = _remove_brackets(text)
     # 移除标点
-    text = re.sub(r'[^\w\s]', ' ', text)
+    text = _remove_punctuation(text)
     # 移除关键字
-    text = re.sub(r"\b(deluxe|explicit|remastered|edition|feat|ft|remix|edit|version)\b", "", text)
+    text = _remove_keywords(text)
     # 移除多余的空格
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
+def normalize_string(text: str) -> str:
+    """标准化字符串，用于模糊比较。"""
+    return _normalize_string(text)
+
 class PlexService:
+    # 定义常量
+    SEARCH_SCORE_THRESHOLD_HIGH = 95  # 极佳匹配分数阈值
+    SEARCH_SCORE_THRESHOLD_LOW = 80   # 低匹配分数阈值
+    RETRY_STOP_AFTER_ATTEMPT = 3      # 重试次数
+    RETRY_WAIT_FIXED = 2              # 重试等待时间（秒）
+    
     @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_fixed(2),
+        stop=stop_after_attempt(RETRY_STOP_AFTER_ATTEMPT), 
+        wait=wait_fixed(RETRY_WAIT_FIXED),
         retry=retry_if_exception_type((ConnectionError, PlexApiException))
     )
     def __init__(self, base_url: str, token: str, verify_ssl: bool = True):
@@ -121,6 +153,11 @@ class PlexService:
         wait=wait_fixed(2),
         retry=retry_if_exception_type((ConnectionError, PlexApiException))
     )
+    def _calculate_combined_score(self, title_score: int, artist_score: int, album_score: int, strategy_weights: Tuple[float, float, float]) -> float:
+        """计算综合匹配分数"""
+        title_weight, artist_weight, album_weight = strategy_weights
+        return (title_score * title_weight) + (artist_score * artist_weight) + (album_score * album_weight)
+
     def _search_by_artist(self, norm_title, norm_artist, norm_album, library):
         """策略1: 按艺术家搜索歌曲"""
         best_match, highest_score = None, 0
@@ -139,7 +176,7 @@ class PlexService:
                     norm_plex_album = normalize_string(track.parentTitle or "")
                     title_score = fuzz.ratio(norm_title, norm_plex_title)
                     album_score = fuzz.ratio(norm_album, norm_plex_album) if norm_album else 70
-                    combined_score = (title_score * 0.6) + (artist_match_score * 0.25) + (album_score * 0.15)
+                    combined_score = self._calculate_combined_score(title_score, artist_match_score, album_score, (0.6, 0.25, 0.15))
 
                     if combined_score > highest_score:
                         highest_score = combined_score
@@ -148,6 +185,36 @@ class PlexService:
             logger.warning(f"按艺术家搜索时出错: {e}")
         
         return best_match, highest_score
+
+    def _find_track_with_score_sync(self, title: str, artist: str, album: str, library: MusicSection) -> Tuple[Optional[Track], int]:
+        norm_title = normalize_string(title)
+        norm_artist = normalize_string(artist)
+        norm_album = normalize_string(album)
+
+        # 策略1: 按艺术家搜索
+        best_match, highest_score = self._search_by_artist(norm_title, norm_artist, norm_album, library)
+        
+        # 如果策略1找到了极佳匹配，则立即返回
+        if highest_score >= self.SEARCH_SCORE_THRESHOLD_HIGH:
+            logger.info(f"策略1找到极佳匹配: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (综合分: {highest_score:.0f})")
+            return best_match, int(highest_score)
+
+        # 策略2: 全局搜索
+        global_match, global_score = self._search_globally(norm_title, norm_artist, norm_album, library)
+
+        if global_score > highest_score:
+            highest_score = global_score
+            best_match = global_match
+            
+        if highest_score > self.SEARCH_SCORE_THRESHOLD_LOW:
+            logger.info(f"模糊匹配成功: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (综合分: {highest_score:.0f})")
+            return best_match, int(highest_score)
+      
+        return None, 0
+
+    async def create_or_update_playlist(self, name: str, tracks: List[Track], log_callback=None) -> bool:
+        """异步创建或更新播放列表"""
+        return await asyncio.to_thread(self._create_or_update_playlist_sync, name, tracks, log_callback)
 
     def _search_globally(self, norm_title, norm_artist, norm_album, library):
         """策略2: 全局搜索歌曲"""
@@ -161,7 +228,7 @@ class PlexService:
                 title_score = fuzz.ratio(norm_title, norm_plex_title)
                 artist_score = fuzz.ratio(norm_artist, norm_plex_artist) if norm_artist else 70
                 album_score = fuzz.ratio(norm_album, norm_plex_album) if norm_album else 70
-                combined_score = (title_score * 0.55) + (artist_score * 0.3) + (album_score * 0.15)
+                combined_score = self._calculate_combined_score(title_score, artist_score, album_score, (0.55, 0.3, 0.15))
                 
                 if combined_score > highest_score:
                     highest_score = combined_score
@@ -171,42 +238,22 @@ class PlexService:
             
         return best_match, highest_score
 
-    def _find_track_with_score_sync(self, title: str, artist: str, album: str, library: MusicSection) -> Tuple[Optional[Track], int]:
-        norm_title = normalize_string(title)
-        norm_artist = normalize_string(artist)
-        norm_album = normalize_string(album)
-
-        # 策略1: 按艺术家搜索
-        best_match, highest_score = self._search_by_artist(norm_title, norm_artist, norm_album, library)
-
-        # 策略2: 全局搜索
-        global_match, global_score = self._search_globally(norm_title, norm_artist, norm_album, library)
-
-        if global_score > highest_score:
-            highest_score = global_score
-            best_match = global_match
-            
-        if highest_score > 80:
-            logger.info(f"模糊匹配成功: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (综合分: {highest_score:.0f})")
-            return best_match, int(highest_score)
-      
-        return None, 0
-
-    async def create_or_update_playlist(self, name: str, tracks: List[Track], log_callback=None) -> bool:
-        """异步创建或更新播放列表"""
-        return await asyncio.to_thread(self._create_or_update_playlist_sync, name, tracks, log_callback)
-
-    def _find_newly_added_tracks_sync(self, library: MusicSection, since: datetime) -> List[Track]:
+    def _find_newly_added_tracks_sync(self, library: MusicSection, since: datetime, max_results: int = 1000) -> List[Track]:
         """
         (同步) 查找自 'since' 时间以来新添加到库的音轨。
         :param library: Plex音乐库对象
         :param since: datetime 对象，表示查找此时间之后添加的音轨
+        :param max_results: 最大返回结果数，默认为1000
         :return: 新添加的 Track 对象列表
         """
         try:
             # 使用 Plex API 的 recentlyAddedTracks 方法获取最近添加的音轨
-            # 限制返回结果数量以提高性能
-            recently_added = library.recentlyAddedTracks(maxresults=1000)
+            recently_added = library.recentlyAddedTracks(maxresults=max_results)
+            
+            # 检查是否达到了最大结果数，如果是则记录警告
+            if len(recently_added) == max_results:
+                logger.warning(f"Recently added tracks count reached the maximum limit of {max_results}. "
+                               "There might be more newly added tracks that were not processed.")
             
             # 过滤出在指定时间之后添加的音轨
             # 注意：Plex 的 addedAt 是 datetime 类型
@@ -218,14 +265,15 @@ class PlexService:
             logger.error(f"Error finding newly added tracks: {e}", exc_info=True)
             return [] # Return empty list on error to prevent breaking the caller
 
-    async def find_newly_added_tracks(self, library: MusicSection, since: datetime) -> List[Track]:
+    async def find_newly_added_tracks(self, library: MusicSection, since: datetime, max_results: int = 1000) -> List[Track]:
         """
         (异步) 查找自 'since' 时间以来新添加到库的音轨。
         :param library: Plex音乐库对象
         :param since: datetime 对象，表示查找此时间之后添加的音轨
+        :param max_results: 最大返回结果数，默认为1000
         :return: 新添加的 Track 对象列表
         """
-        return await asyncio.to_thread(self._find_newly_added_tracks_sync, library, since)
+        return await asyncio.to_thread(self._find_newly_added_tracks_sync, library, since, max_results)
 
     @retry(
         stop=stop_after_attempt(3), 
@@ -240,20 +288,49 @@ class PlexService:
         try:
             try:
                 target_playlist = self.server.playlist(name)
-                if log_callback: log_callback('info', f'找到现有播放列表 "{name}"，将清空并重新添加。')
-                target_playlist.removeItems(target_playlist.items())
+                if log_callback: log_callback('info', f'找到现有播放列表 "{name}"，将进行增量更新。')
+                
+                # 获取现有播放列表的所有项目
+                current_tracks = target_playlist.items()
+                
+                # 将 current_tracks 和 tracks 转换为基于 ratingKey 的集合
+                current_tracks_set = {track.ratingKey for track in current_tracks}
+                new_tracks_set = {track.ratingKey for track in tracks}
+                
+                # 计算需要移除和添加的项目
+                tracks_to_remove_keys = current_tracks_set - new_tracks_set
+                tracks_to_add_keys = new_tracks_set - current_tracks_set
+                
+                # 获取实际需要移除和添加的 Track 对象
+                tracks_to_remove = [track for track in current_tracks if track.ratingKey in tracks_to_remove_keys]
+                tracks_to_add = [track for track in tracks if track.ratingKey in tracks_to_add_keys]
+                
+                # 执行移除操作
+                if tracks_to_remove:
+                    try:
+                        target_playlist.removeItems(tracks_to_remove)
+                        logger.info(f"从播放列表 '{name}' 移除了 {len(tracks_to_remove)} 首歌曲")
+                    except Exception as e:
+                        logger.error(f"从播放列表 '{name}' 移除歌曲时出错: {e}")
+                        if log_callback: log_callback('error', f"从播放列表 '{name}' 移除歌曲时出错: {e}")
+                
+                # 执行添加操作
+                if tracks_to_add:
+                    try:
+                        target_playlist.addItems(tracks_to_add)
+                        logger.info(f"向播放列表 '{name}' 添加了 {len(tracks_to_add)} 首歌曲")
+                    except Exception as e:
+                        logger.error(f"向播放列表 '{name}' 添加歌曲时出错: {e}")
+                        if log_callback: log_callback('error', f"向播放列表 '{name}' 添加歌曲时出错: {e}")
+                        
+                final_size = len(target_playlist.items())
+                if log_callback: log_callback('success', f'成功更新并导入 {final_size} 首歌曲到 Plex 播放列表 "{name}"。')
+                
             except NotFound:
                 if log_callback: log_callback('info', f'播放列表 "{name}" 不存在，将创建它。')
                 self.server.createPlaylist(name, items=tracks)
                 if log_callback: log_callback('success', f'成功创建并导入 {len(tracks)} 首歌曲到 Plex 播放列表 "{name}"。')
-                return True
-            
-            if tracks:
-                target_playlist.addItems(tracks)
-
-            final_size = len(target_playlist.items())
-            if log_callback: log_callback('success', f'成功更新并导入 {final_size} 首歌曲到 Plex 播放列表 "{name}"。')
-            
+                
             return True
             
         except Exception as e:

@@ -58,6 +58,16 @@ def test_recently_added_tracks():
         # 验证 recentlyAddedTracks 方法被正确调用
         mock_library.recentlyAddedTracks.assert_called_once_with(maxresults=1000)
         
+        # 重置 mock
+        mock_library.recentlyAddedTracks.reset_mock()
+        
+        # 测试使用自定义 max_results 参数
+        custom_max_results = 500
+        new_tracks_custom = plex_service._find_newly_added_tracks_sync(mock_library, since_time, custom_max_results)
+        
+        # 验证 recentlyAddedTracks 方法被正确调用
+        mock_library.recentlyAddedTracks.assert_called_once_with(maxresults=custom_max_results)
+        
         logger.info("Recently added tracks test passed!")
         print("Recently added tracks test passed!")
 

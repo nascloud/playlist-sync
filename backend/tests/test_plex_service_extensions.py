@@ -1,6 +1,12 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+import sys
+import os
+
+# Add the project root directory to the path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 from services.plex_service import PlexService
 from core.security import decrypt_token
 from core.database import get_db_connection
@@ -55,7 +61,8 @@ async def test_plex_service_extensions():
         new_tracks = await asyncio.to_thread(
             plex_service._find_newly_added_tracks_sync, 
             music_library, 
-            since_time
+            since_time,
+            1000  # max_results parameter
         )
         logger.info(f"Found {len(new_tracks)} newly added tracks in the last day.")
         for track in new_tracks[:5]:  # Log first 5 tracks
