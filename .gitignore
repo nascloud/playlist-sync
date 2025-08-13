@@ -38,3 +38,6 @@ docs/AIAPI.md
 
 # Build artifacts
 web/dist/
+
+# Test scripts
+scripts/test_*.py
