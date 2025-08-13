@@ -20,6 +20,12 @@ import asyncio
 
 logger = logging.getLogger(__name__)
 
+# 版本关键词列表，用于提取核心标题
+VERSION_KEYWORDS = [
+    "live", "demo", "acoustic", "instrumental", "mix", "version", "remix", "edit",
+    "feat", "ft", "radio", "album", "single", "explicit", "clean", "session", "take"
+]
+
 def _remove_brackets(text: str) -> str:
     """移除括号内的内容"""
     if not text:
@@ -40,7 +46,7 @@ def _remove_brackets(text: str) -> str:
 
 def _remove_keywords(text: str) -> str:
     """移除关键字"""
-    return re.sub(r"\b(deluxe|explicit|remastered|edition|feat|ft|remix|edit|version)\b", "", text)
+    return re.sub(r"\b(deluxe|explicit|remastered|edition|feat|ft|remix|edit|version|demo|live)\b", "", text)
 
 def _remove_punctuation(text: str) -> str:
     """移除标点符号"""
@@ -69,10 +75,117 @@ def normalize_string(text: str) -> str:
     """标准化字符串，用于模糊比较。"""
     return _normalize_string(text)
 
+def _extract_core_title(norm_title: str) -> str:
+    """从标准化标题中提取核心标题，移除版本信息。"""
+    if not norm_title:
+        return ""
+    core_title = norm_title
+    # 移除括号内容（更智能的版本，但这里简化处理，直接移除所有括号）
+    core_title = _remove_brackets(core_title)
+    # 移除版本关键词 (使用词边界确保准确)
+    for keyword in VERSION_KEYWORDS:
+        # 使用 re.IGNORECASE 确保大小写不敏感匹配
+        core_title = re.sub(rf"\b{re.escape(keyword)}\b", "", core_title, flags=re.IGNORECASE)
+    # 移除多余的空格
+    core_title = re.sub(r'\s+', ' ', core_title)
+    return core_title.strip()
+
+def _calculate_artist_score(norm_artist: str, plex_artist: str) -> int:
+    """计算艺术家匹配分数。"""
+    if not norm_artist:
+        return 70 # 如果输入没有艺术家信息，给一个基础分
+
+    # 更严格的标准化：去除空格并转为小写
+    norm_artist_clean = norm_artist.replace(" ", "").lower()
+    plex_artist_clean = plex_artist.replace(" ", "").lower()
+
+    # 如果完全匹配，给高分
+    if norm_artist_clean == plex_artist_clean:
+        return 90
+
+    # 将艺术家字符串分割成集合进行比较 (原始逻辑)
+    norm_artist_set = set(norm_artist.split())
+    plex_artist_set = set(plex_artist.split())
+
+    if not norm_artist_set or not plex_artist_set:
+        # 如果任一集合为空，回退到 fuzz.ratio
+        return fuzz.ratio(norm_artist, plex_artist)
+
+    # 计算交集
+    intersection = norm_artist_set & plex_artist_set
+    # 计算并集
+    union = norm_artist_set | plex_artist_set
+    
+    # 使用 Jaccard 相似度作为基础
+    if len(union) > 0:
+        jaccard_similarity = len(intersection) / len(union)
+    else:
+        jaccard_similarity = 0
+
+    # 使用 fuzz.ratio 作为辅助
+    fuzz_score = fuzz.ratio(norm_artist, plex_artist) / 100.0
+
+    # 综合评分：Jaccard 占 70%，fuzz.ratio 占 30%
+    # 增加 Jaccard 的权重，因为它更能体现多艺术家场景下的匹配度
+    combined_score = (jaccard_similarity * 0.7 + fuzz_score * 0.3) * 100
+
+    return int(combined_score)
+
+def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, norm_album: str, core_title: str) -> float:
+    """计算增强版综合匹配分数。"""
+    try:
+        plex_norm_title = normalize_string(track.title)
+        plex_core_title = _extract_core_title(plex_norm_title)
+        plex_artist = normalize_string(track.grandparentTitle or "")
+        plex_album = normalize_string(track.parentTitle or "")
+
+        # --- 标题评分 ---
+        title_score = fuzz.ratio(norm_title, plex_norm_title)
+        core_title_score = fuzz.ratio(core_title, plex_core_title)
+        # 结合原始标题和核心标题分数
+        combined_title_score = (title_score * 0.7) + (core_title_score * 0.3)
+        # 版本惩罚：如果输入的核心标题与Plex的核心标题匹配，但完整标题不匹配，则轻微惩罚
+        # 降低惩罚力度，从 0.95 调整为 0.98
+        version_penalty_applied = False
+        if core_title == plex_core_title and norm_title != plex_norm_title:
+            combined_title_score *= 0.98
+            version_penalty_applied = True
+
+        # --- 艺术家评分 ---
+        artist_score = _calculate_artist_score(norm_artist, plex_artist)
+
+        # --- 专辑评分 ---
+        album_score = fuzz.ratio(norm_album, plex_album) if norm_album else 70
+
+        # --- 动态权重 ---
+        # 调整权重，略微增加艺术家和专辑的权重，略微降低标题权重
+        # 因为观察到艺术家信息对于区分不同版本的歌曲很重要
+        W_TITLE = 0.35
+        W_ARTIST = 0.45
+        W_ALBUM = 0.2
+
+        # --- 综合分数 ---
+        final_score = (combined_title_score * W_TITLE) + (artist_score * W_ARTIST) + (album_score * W_ALBUM)
+        
+        # --- 详细调试日志 ---
+        logger.debug(
+            f"评分详情 - Plex Track: '{track.title}' (Artist: {track.grandparentTitle}) | "
+            f"查询: '{norm_title}' (Artist: {norm_artist}) | "
+            f"Title Score: {title_score:.2f}, Core Title Score: {core_title_score:.2f}, "
+            f"Combined Title Score: {combined_title_score:.2f} (Penalty: {version_penalty_applied}), "
+            f"Artist Score: {artist_score:.2f}, Album Score: {album_score:.2f}, "
+            f"Final Score: {final_score:.2f}"
+        )
+        
+        return final_score
+    except Exception as e:
+        logger.warning(f"计算分数时出错 for track {track.title}: {e}")
+        return 0.0
+
 class PlexService:
     # 定义常量
-    SEARCH_SCORE_THRESHOLD_HIGH = 90  # 极佳匹配分数阈值
-    SEARCH_SCORE_THRESHOLD_LOW = 80   # 低匹配分数阈值
+    SEARCH_SCORE_THRESHOLD_HIGH = 65  # 进一步降低阈值以测试匹配效果
+    SEARCH_SCORE_THRESHOLD_LOW = 45   # 进一步降低阈值以测试匹配效果
     RETRY_STOP_AFTER_ATTEMPT = 3      # 重试次数
     RETRY_WAIT_FIXED = 2              # 重试等待时间（秒）
     
@@ -148,95 +261,53 @@ class PlexService:
             await progress_callback()
         return result
 
-    @retry(
-        stop=stop_after_attempt(3), 
-        wait=wait_fixed(2),
-        retry=retry_if_exception_type((ConnectionError, PlexApiException))
-    )
-    def _calculate_combined_score(self, title_score: int, artist_score: int, album_score: int, strategy_weights: Tuple[float, float, float]) -> float:
-        """计算综合匹配分数"""
-        title_weight, artist_weight, album_weight = strategy_weights
-        return (title_score * title_weight) + (artist_score * artist_weight) + (album_score * album_weight)
-
-    def _search_by_artist(self, norm_title, norm_artist, norm_album, library):
-        """策略1: 按艺术家搜索歌曲"""
-        best_match, highest_score = None, 0
-        if not norm_artist:
-            return best_match, highest_score
-
-        try:
-            artists = library.search(norm_artist, libtype='artist')
-            for art in artists:
-                artist_match_score = fuzz.ratio(norm_artist, normalize_string(art.title))
-                if artist_match_score < 70:
-                    continue
-                
-                for track in art.tracks():
-                    norm_plex_title = normalize_string(track.title)
-                    norm_plex_album = normalize_string(track.parentTitle or "")
-                    title_score = fuzz.ratio(norm_title, norm_plex_title)
-                    album_score = fuzz.ratio(norm_album, norm_plex_album) if norm_album else 70
-                    combined_score = self._calculate_combined_score(title_score, artist_match_score, album_score, (0.6, 0.25, 0.15))
-
-                    if combined_score > highest_score:
-                        highest_score = combined_score
-                        best_match = track
-        except Exception as e:
-            logger.warning(f"按艺术家搜索时出错: {e}")
-        
-        return best_match, highest_score
-
     def _find_track_with_score_sync(self, title: str, artist: str, album: str, library: MusicSection) -> Tuple[Optional[Track], int]:
+        """使用增强版匹配策略查找音轨。"""
         norm_title = normalize_string(title)
+        core_title = _extract_core_title(norm_title)
         norm_artist = normalize_string(artist)
         norm_album = normalize_string(album)
 
-        # 策略1: 按艺术家搜索
-        best_match, highest_score = self._search_by_artist(norm_title, norm_artist, norm_album, library)
-        
-        # 如果策略1找到了极佳匹配，则立即返回
+        best_match, highest_score = None, 0
+        candidates = []
+
+        try:
+            # 核心标题搜索：最大化召回率
+            results = library.search(core_title, libtype='track')
+            logger.debug(f"核心标题 '{core_title}' 搜索到 {len(results)} 个候选结果。")
+
+            # 对每个候选结果进行精细化评分
+            for track in results:
+                score = _calculate_enhanced_score(track, norm_title, norm_artist, norm_album, core_title)
+                candidates.append((track, score))
+
+            # 按分数排序
+            candidates.sort(key=lambda x: x[1], reverse=True)
+
+            # 选择最高分的候选
+            if candidates:
+                best_match, highest_score = candidates[0]
+                logger.debug(f"最高分候选: '{best_match.title}' (分数: {highest_score:.2f})")
+
+        except Exception as e:
+            logger.error(f"在Plex中搜索音轨时出错 '{title} - {artist}': {e}", exc_info=True)
+
+        # 根据阈值返回结果
         if highest_score >= self.SEARCH_SCORE_THRESHOLD_HIGH:
-            logger.info(f"策略1找到极佳匹配: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (综合分: {highest_score:.0f})")
+            logger.info(f"高置信度匹配成功: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (分数: {highest_score:.0f})")
             return best_match, int(highest_score)
-
-        # 策略2: 全局搜索
-        global_match, global_score = self._search_globally(norm_title, norm_artist, norm_album, library)
-
-        if global_score > highest_score:
-            highest_score = global_score
-            best_match = global_match
-            
-        if highest_score > self.SEARCH_SCORE_THRESHOLD_LOW:
-            logger.info(f"模糊匹配成功: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (综合分: {highest_score:.0f})")
-            return best_match, int(highest_score)
-      
-        return None, 0
+        elif highest_score >= self.SEARCH_SCORE_THRESHOLD_LOW:
+            logger.info(f"低置信度匹配: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (分数: {highest_score:.0f})")
+            # 可以选择返回低置信度匹配或返回 None, 0
+            # 这里我们返回它，但主调用者需要知道这是低置信度
+            return best_match, int(highest_score) 
+        else:
+            logger.info(f"匹配失败: '{title} | {artist}'")
+            return None, 0
 
     async def create_or_update_playlist(self, name: str, tracks: List[Track], log_callback=None) -> bool:
         """异步创建或更新播放列表"""
         return await asyncio.to_thread(self._create_or_update_playlist_sync, name, tracks, log_callback)
-
-    def _search_globally(self, norm_title, norm_artist, norm_album, library):
-        """策略2: 全局搜索歌曲"""
-        best_match, highest_score = None, 0
-        try:
-            results = library.search(norm_title, libtype='track')
-            for track in results:
-                norm_plex_title = normalize_string(track.title)
-                norm_plex_artist = normalize_string(track.grandparentTitle or "")
-                norm_plex_album = normalize_string(track.parentTitle or "")
-                title_score = fuzz.ratio(norm_title, norm_plex_title)
-                artist_score = fuzz.ratio(norm_artist, norm_plex_artist) if norm_artist else 70
-                album_score = fuzz.ratio(norm_album, norm_plex_album) if norm_album else 70
-                combined_score = self._calculate_combined_score(title_score, artist_score, album_score, (0.55, 0.3, 0.15))
-                
-                if combined_score > highest_score:
-                    highest_score = combined_score
-                    best_match = track
-        except Exception as e:
-            logger.error(f"在Plex中搜索音轨时出错 '{norm_title} - {norm_artist}': {e}", exc_info=True)
-            
-        return best_match, highest_score
 
     def _find_newly_added_tracks_sync(self, library: MusicSection, since: datetime, max_results: int = 1000) -> List[Track]:
         """
@@ -356,7 +427,7 @@ class PlexService:
                 logger.info("Requesting Plex to refresh the entire music library")
                 # Refresh the entire library section
                 library.refresh()
-                logger.info("Successfully requested refresh for the entire music library")
+                logger.info("Successfully requested refresh for the entire music图书馆")
             return True
         except Exception as e:
             logger.error(f"Failed to request scan/refresh: {e}", exc_info=True)
