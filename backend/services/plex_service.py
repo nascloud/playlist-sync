@@ -71,7 +71,7 @@ def normalize_string(text: str) -> str:
 
 class PlexService:
     # 定义常量
-    SEARCH_SCORE_THRESHOLD_HIGH = 95  # 极佳匹配分数阈值
+    SEARCH_SCORE_THRESHOLD_HIGH = 90  # 极佳匹配分数阈值
     SEARCH_SCORE_THRESHOLD_LOW = 80   # 低匹配分数阈值
     RETRY_STOP_AFTER_ATTEMPT = 3      # 重试次数
     RETRY_WAIT_FIXED = 2              # 重试等待时间（秒）
