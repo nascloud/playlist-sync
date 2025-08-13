@@ -21,27 +21,22 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 # 版本关键词列表，用于提取核心标题
+# 注意：添加了 'Ver.' 以匹配带点的情况
 VERSION_KEYWORDS = [
     "live", "demo", "acoustic", "instrumental", "mix", "version", "remix", "edit",
-    "feat", "ft", "radio", "album", "single", "explicit", "clean", "session", "take"
+    "feat", "ft", "radio", "album", "single", "explicit", "clean", "session", "take",
+    "ver", "Ver", "Ver.", "版本", "版", "女版", "男版", "现场版", "录音室版", "纯音乐版", "伴奏版"
 ]
 
 def _remove_brackets(text: str) -> str:
     """移除括号内的内容"""
     if not text:
         return ""
-    # 移除括号内的特定内容（支持中英文括号）
-    # 英文括号
-    text = re.sub(r"\(\s*(feat|ft|remix|edit)\s*[^)]*\)", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\[\s*(feat|ft|remix|edit)\s*[^\]]*\]", "", text, flags=re.IGNORECASE)
-    # 中文括号
-    text = re.sub(r"（\s*(feat|ft|remix|edit)\s*[^）]*）", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"［\s*(feat|ft|remix|edit)\s*[^］]*］", "", text, flags=re.IGNORECASE)
-    # 移除所有剩余的括号内容（不管是否包含关键词）
-    text = re.sub(r"\([^)]*\)", "", text)
-    text = re.sub(r"\[[^\]]*\]", "", text)
-    text = re.sub(r"（[^）]*）", "", text)
-    text = re.sub(r"［[^］]*］", "", text)
+    # 移除所有括号内容（中英文）
+    text = re.sub(r"\([^)]*\)", "", text)  # 英文小括号
+    text = re.sub(r"\[[^\]]*\]", "", text)  # 英文中括号
+    text = re.sub(r"（[^）]*）", "", text)  # 中文小括号
+    text = re.sub(r"［[^］]*］", "", text)  # 中文中括号
     return text
 
 def _remove_keywords(text: str) -> str:
@@ -76,17 +71,14 @@ def normalize_string(text: str) -> str:
     return _normalize_string(text)
 
 def _extract_core_title(norm_title: str) -> str:
-    """从标准化标题中提取核心标题，移除版本信息。"""
+    """从标准化标题中提取核心标题，只移除括号内容。"""
     if not norm_title:
         return ""
-    core_title = norm_title
-    # 移除括号内容（更智能的版本，但这里简化处理，直接移除所有括号）
-    core_title = _remove_brackets(core_title)
-    # 移除版本关键词 (使用词边界确保准确)
-    for keyword in VERSION_KEYWORDS:
-        # 使用 re.IGNORECASE 确保大小写不敏感匹配
-        core_title = re.sub(rf"\b{re.escape(keyword)}\b", "", core_title, flags=re.IGNORECASE)
-    # 移除多余的空格
+    
+    # 1. 只移除括号内容
+    core_title = _remove_brackets(norm_title)
+    
+    # 2. 移除多余的空格
     core_title = re.sub(r'\s+', ' ', core_title)
     return core_title.strip()
 
@@ -104,8 +96,11 @@ def _calculate_artist_score(norm_artist: str, plex_artist: str) -> int:
         return 90
 
     # 将艺术家字符串分割成集合进行比较 (原始逻辑)
-    norm_artist_set = set(norm_artist.split())
-    plex_artist_set = set(plex_artist.split())
+    # 使用更通用的分隔符 ', ', ',', ' & ', ' 和 ', '/', '、'
+    import re
+    separators = r', |,| & | 和 |\/|、'
+    norm_artist_set = set(re.split(separators, norm_artist))
+    plex_artist_set = set(re.split(separators, plex_artist))
 
     if not norm_artist_set or not plex_artist_set:
         # 如果任一集合为空，回退到 fuzz.ratio
@@ -128,6 +123,28 @@ def _calculate_artist_score(norm_artist: str, plex_artist: str) -> int:
     # 综合评分：Jaccard 占 70%，fuzz.ratio 占 30%
     # 增加 Jaccard 的权重，因为它更能体现多艺术家场景下的匹配度
     combined_score = (jaccard_similarity * 0.7 + fuzz_score * 0.3) * 100
+    
+    # --- 新增逻辑：更动态的部分匹配奖励 ---
+    # 如果有交集，根据交集大小和位置给予不同程度的奖励
+    if len(intersection) > 0:
+        # 计算交集在查询艺术家中的占比
+        intersection_ratio_in_query = len(intersection) / len(norm_artist_set)
+        
+        # 检查第一个艺术家是否匹配（通常更重要）
+        first_artist_matched = False
+        if norm_artist_set and plex_artist_set:
+            first_query_artist = next(iter(norm_artist_set)) # 获取第一个元素
+            if first_query_artist in plex_artist_set:
+                first_artist_matched = True
+        
+        # 基础奖励分，根据交集占比动态调整 (55 to 80)
+        # 如果第一个艺术家匹配，则给予额外奖励 (5分)
+        base_reward = 55 + (intersection_ratio_in_query * 25)
+        if first_artist_matched:
+            base_reward += 5
+            
+        # 确保 combined_score 至少为 base_reward
+        combined_score = max(combined_score, base_reward)
 
     return int(combined_score)
 
@@ -142,27 +159,29 @@ def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, n
         # --- 标题评分 ---
         title_score = fuzz.ratio(norm_title, plex_norm_title)
         core_title_score = fuzz.ratio(core_title, plex_core_title)
-        # 结合原始标题和核心标题分数
+        # 结合原始标题和核心标题分数 (这里给原始标题更高权重)
         combined_title_score = (title_score * 0.7) + (core_title_score * 0.3)
-        # 版本惩罚：如果输入的核心标题与Plex的核心标题匹配，但完整标题不匹配，则轻微惩罚
-        # 降低惩罚力度，从 0.95 调整为 0.98
-        version_penalty_applied = False
-        if core_title == plex_core_title and norm_title != plex_norm_title:
-            combined_title_score *= 0.98
-            version_penalty_applied = True
 
         # --- 艺术家评分 ---
         artist_score = _calculate_artist_score(norm_artist, plex_artist)
 
         # --- 专辑评分 ---
-        album_score = fuzz.ratio(norm_album, plex_album) if norm_album else 70
+        album_score = fuzz.ratio(norm_album, plex_album) if norm_album else 70 # 如果没有专辑信息，给一个基础分
 
-        # --- 动态权重 ---
-        # 调整权重，略微增加艺术家和专辑的权重，略微降低标题权重
-        # 因为观察到艺术家信息对于区分不同版本的歌曲很重要
-        W_TITLE = 0.35
-        W_ARTIST = 0.45
-        W_ALBUM = 0.2
+        # --- 动态权重 (根据是否有专辑信息调整) ---
+        if norm_album:
+             # 如果有专辑信息，则按预设权重分配
+             W_TITLE = 0.45
+             W_ARTIST = 0.35
+             W_ALBUM = 0.20
+        else:
+             # 如果没有专辑信息，则将原本分配给专辑的权重部分转移给标题和艺术家
+             # 例如，将专辑的0.2权重按比例分配给标题(0.45)和艺术家(0.35)
+             # 新的权重变为：标题 0.45 + (0.2 * 0.45/0.8) ≈ 0.5625, 艺术家 0.35 + (0.2 * 0.35/0.8) ≈ 0.4375
+             # 简化处理：标题权重稍微增加一点，艺术家权重也增加一点
+             W_TITLE = 0.50
+             W_ARTIST = 0.50
+             W_ALBUM = 0.0 # 不参与计算
 
         # --- 综合分数 ---
         final_score = (combined_title_score * W_TITLE) + (artist_score * W_ARTIST) + (album_score * W_ALBUM)
@@ -172,7 +191,7 @@ def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, n
             f"评分详情 - Plex Track: '{track.title}' (Artist: {track.grandparentTitle}) | "
             f"查询: '{norm_title}' (Artist: {norm_artist}) | "
             f"Title Score: {title_score:.2f}, Core Title Score: {core_title_score:.2f}, "
-            f"Combined Title Score: {combined_title_score:.2f} (Penalty: {version_penalty_applied}), "
+            f"Combined Title Score: {combined_title_score:.2f}, "
             f"Artist Score: {artist_score:.2f}, Album Score: {album_score:.2f}, "
             f"Final Score: {final_score:.2f}"
         )
@@ -184,8 +203,8 @@ def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, n
 
 class PlexService:
     # 定义常量
-    SEARCH_SCORE_THRESHOLD_HIGH = 65  # 进一步降低阈值以测试匹配效果
-    SEARCH_SCORE_THRESHOLD_LOW = 45   # 进一步降低阈值以测试匹配效果
+    SEARCH_SCORE_THRESHOLD_HIGH = 60  # 降低阈值
+    SEARCH_SCORE_THRESHOLD_LOW = 40   # 降低阈值
     RETRY_STOP_AFTER_ATTEMPT = 3      # 重试次数
     RETRY_WAIT_FIXED = 2              # 重试等待时间（秒）
     
@@ -293,13 +312,13 @@ class PlexService:
             logger.error(f"在Plex中搜索音轨时出错 '{title} - {artist}': {e}", exc_info=True)
 
         # 根据阈值返回结果
+        # 注意：此处返回的分数是整数，与阈值比较时应保持一致
         if highest_score >= self.SEARCH_SCORE_THRESHOLD_HIGH:
             logger.info(f"高置信度匹配成功: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (分数: {highest_score:.0f})")
             return best_match, int(highest_score)
         elif highest_score >= self.SEARCH_SCORE_THRESHOLD_LOW:
             logger.info(f"低置信度匹配: '{title} | {artist}' -> '{best_match.title} | {best_match.grandparentTitle}' (分数: {highest_score:.0f})")
-            # 可以选择返回低置信度匹配或返回 None, 0
-            # 这里我们返回它，但主调用者需要知道这是低置信度
+            # 返回低置信度匹配及其分数
             return best_match, int(highest_score) 
         else:
             logger.info(f"匹配失败: '{title} | {artist}'")
