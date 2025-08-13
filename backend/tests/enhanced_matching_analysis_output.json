@@ -33,11 +33,11 @@
         "title": "Baby, Don't Cry（人鱼的眼泪） (Chinese Ver.)",
         "artist": "EXO (엑소)",
         "album": "未知专辑",
-        "matched": false,
-        "match_score": 0,
-        "matched_title": null,
-        "matched_artist": null,
-        "matched_album": null
+        "matched": true,
+        "match_score": 45,
+        "matched_title": "Baby Don't Cry",
+        "matched_artist": "安室奈美恵",
+        "matched_album": "Play"
     },
     {
         "title": "Cry For Me (feat. Ami) (为我哭泣)",

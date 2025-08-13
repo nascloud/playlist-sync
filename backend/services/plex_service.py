@@ -44,8 +44,9 @@ def _remove_keywords(text: str) -> str:
     return re.sub(r"\b(deluxe|explicit|remastered|edition|feat|ft|remix|edit|version|demo|live)\b", "", text)
 
 def _remove_punctuation(text: str) -> str:
-    """移除标点符号"""
-    return re.sub(r'[^\w\s]', ' ', text)
+    """移除标点符号，但保留单引号"""
+    # 保留单引号，移除其他标点
+    return re.sub(r"[^\w\s']", ' ', text)
 
 def _normalize_string(text: str) -> str:
     """标准化字符串，用于模糊比较。"""
@@ -78,7 +79,29 @@ def _extract_core_title(norm_title: str) -> str:
     # 1. 只移除括号内容
     core_title = _remove_brackets(norm_title)
     
-    # 2. 移除多余的空格
+    # 2. 移除版本关键词 (如 ver, Ver., 版本等)
+    # 构建一个更健壮的正则表达式来移除版本关键词
+    # 注意：需要对特殊字符进行转义，并处理可选的点
+    escaped_keywords = [re.escape(kw) for kw in VERSION_KEYWORDS]
+    # 将 kw\.? 模式替换为 kw 或 kw. (例如 ver\.? 匹配 ver 或 ver.)
+    pattern_parts = []
+    for kw in escaped_keywords:
+        if kw.endswith(r'\.'):  # 如果关键词以转义的点结尾 (如 Ver\.)
+            # 匹配 Ver 或 Ver. (原 kw 是 Ver.)
+            base_kw = kw[:-2]  # 去掉 \.
+            pattern_parts.append(f"{base_kw}\\.?")
+        else:
+            # 对于其他关键词，直接匹配
+            pattern_parts.append(kw)
+
+    # 使用一个大的正则表达式一次性移除所有关键词
+    # 注意：需要按长度降序排列，以避免短关键词先匹配了长关键词的一部分
+    if pattern_parts:
+        pattern_parts.sort(key=len, reverse=True)
+        pattern = r'\b(?:' + '|'.join(pattern_parts) + r')\b'
+        core_title = re.sub(pattern, "", core_title, flags=re.IGNORECASE)
+    
+    # 3. 移除多余的空格
     core_title = re.sub(r'\s+', ' ', core_title)
     return core_title.strip()
 
@@ -137,9 +160,9 @@ def _calculate_artist_score(norm_artist: str, plex_artist: str) -> int:
             if first_query_artist in plex_artist_set:
                 first_artist_matched = True
         
-        # 基础奖励分，根据交集占比动态调整 (55 to 80)
+        # 基础奖励分，根据交集占比动态调整 (65 to 90)
         # 如果第一个艺术家匹配，则给予额外奖励 (5分)
-        base_reward = 55 + (intersection_ratio_in_query * 25)
+        base_reward = 65 + (intersection_ratio_in_query * 25)
         if first_artist_matched:
             base_reward += 5
             
@@ -203,8 +226,8 @@ def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, n
 
 class PlexService:
     # 定义常量
-    SEARCH_SCORE_THRESHOLD_HIGH = 60  # 降低阈值
-    SEARCH_SCORE_THRESHOLD_LOW = 40   # 降低阈值
+    SEARCH_SCORE_THRESHOLD_HIGH = 55  # 调整阈值以增加高置信度匹配
+    SEARCH_SCORE_THRESHOLD_LOW = 45   # 保持低置信度阈值不变
     RETRY_STOP_AFTER_ATTEMPT = 3      # 重试次数
     RETRY_WAIT_FIXED = 2              # 重试等待时间（秒）
     
