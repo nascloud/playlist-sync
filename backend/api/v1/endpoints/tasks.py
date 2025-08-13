@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Path, Depends, Body
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from schemas.tasks import Task, TaskCreate, TaskList, TaskUpdate
 from schemas.response import SuccessResponse
 from services.task_service import TaskService
@@ -11,6 +11,9 @@ from pydantic import BaseModel, HttpUrl
 import logging
 import json
 import asyncio
+import csv
+import io
+from datetime import datetime
 from utils.progress_manager import progress_manager
 from pydantic import BaseModel
 
@@ -180,4 +183,36 @@ async def get_unmatched_songs(task_id: int = Path(..., title="任务ID")):
     except Exception as e:
         logger.error(f"获取任务 {task_id} 的不匹配歌曲时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"获取不匹配歌曲失败: {str(e)}")
+
+@router.get("/tasks/{task_id}/unmatched/export")
+async def export_unmatched_songs(task_id: int = Path(..., title="任务ID")):
+    """导出任务的不匹配歌曲为JSON"""
+    try:
+        # 获取任务信息
+        task = TaskService.get_task_by_id(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="未找到指定的任务")
+        
+        # 获取未匹配歌曲
+        unmatched_songs = TaskService.get_unmatched_songs_for_task(task_id)
+        
+        # 创建导出数据
+        export_data = {
+            "task_id": task_id,
+            "task_name": task.name,
+            "export_time": datetime.utcnow().isoformat(),
+            "unmatched_songs": unmatched_songs
+        }
+        
+        # 返回JSON响应
+        return Response(
+            content=json.dumps(export_data, ensure_ascii=False, indent=2),
+            media_type="application/json",
+            headers={
+                "Content-Disposition": f"attachment; filename=unmatched_songs_task_{task_id}.json"
+            }
+        )
+    except Exception as e:
+        logger.error(f"导出任务 {task_id} 的不匹配歌曲时发生错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"导出不匹配歌曲失败: {str(e)}")
 

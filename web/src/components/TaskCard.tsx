@@ -229,7 +229,7 @@ const TaskCard: React.FC<TaskCardProps> = ({
            ) : (
              <p className="text-sm text-gray-500">太棒了！所有歌曲都已成功匹配。</p>
            )}
-           <div className="mt-4">
+           <div className="mt-4 flex gap-2">
              <Button 
                variant="secondary"
                size="sm"
@@ -237,6 +237,40 @@ const TaskCard: React.FC<TaskCardProps> = ({
                disabled={unmatchedCount === null || unmatchedCount === 0}
              >
                一键下载全部
+             </Button>
+             <Button 
+               variant="secondary"
+               size="sm"
+               onClick={async () => {
+                 try {
+                   const response = await fetch(`/api/tasks/${task.id}/unmatched/export`, {
+                     headers: {
+                       'Authorization': `Bearer ${localStorage.getItem('token')}`
+                     }
+                   });
+                   
+                   if (!response.ok) {
+                     throw new Error('导出失败');
+                   }
+                   
+                   // 创建下载链接
+                   const blob = await response.blob();
+                   const url = window.URL.createObjectURL(blob);
+                   const a = document.createElement('a');
+                   a.href = url;
+                   a.download = `unmatched_songs_task_${task.id}.json`;
+                   document.body.appendChild(a);
+                   a.click();
+                   document.body.removeChild(a);
+                   window.URL.revokeObjectURL(url);
+                 } catch (error) {
+                   console.error('导出失败:', error);
+                   alert('导出失败，请重试');
+                 }
+               }}
+               disabled={unmatchedCount === null || unmatchedCount === 0}
+             >
+               导出列表
              </Button>
            </div>
         </div>
