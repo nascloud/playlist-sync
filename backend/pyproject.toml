@@ -25,4 +25,5 @@ dependencies = [
     "passlib[bcrypt]==1.7.4",
     "dotenv>=0.9.9",
     "requests>=2.32.4",
+    "python-json-logger==2.0.7",
 ]
