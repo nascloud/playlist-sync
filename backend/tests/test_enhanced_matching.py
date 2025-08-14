@@ -104,7 +104,10 @@ class TestEnhancedMatching(unittest.TestCase):
         logger.info(f"\n--- 未匹配歌曲艺术家分析 ---")
         logger.info(f"未匹配歌曲数: {len(unmatched_results)}")
         logger.info(f"其中疑似多艺术家歌曲数: {multi_artist_count}")
-        logger.info(f"多艺术家歌曲占比: {multi_artist_count/len(unmatched_results)*100:.2f}% (如果高，说明这是一个关键问题)")
+        if len(unmatched_results) > 0:
+            logger.info(f"多艺术家歌曲占比: {multi_artist_count/len(unmatched_results)*100:.2f}% (如果高，说明这是一个关键问题)")
+        else:
+            logger.info("未匹配歌曲数为 0，无法计算多艺术家歌曲占比。")
 
         # 将详细结果保存到文件，供进一步分析
         output_file = os.path.join(os.path.dirname(__file__), 'enhanced_matching_analysis_output.json')
@@ -118,7 +121,7 @@ class TestEnhancedMatching(unittest.TestCase):
     def _generate_conclusion(self, matched_count, total_count, multi_artist_unmatched_count, total_unmatched_count):
         """根据分析结果生成结论"""
         logger.info(f"\n--- 测试结论 ---")
-        match_rate = matched_count / total_count
+        match_rate = matched_count / total_count if total_count > 0 else 0
         multi_artist_rate = multi_artist_unmatched_count / total_unmatched_count if total_unmatched_count > 0 else 0
 
         if match_rate > 0.7:
