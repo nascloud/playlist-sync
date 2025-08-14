@@ -435,10 +435,6 @@ class DownloaderCore:
         
         search_term = f"{item.artist} {item.title}"
         loop = asyncio.get_running_loop()
-        best_match: Dict[str, Any] = {}
-        highest_score = 0
-        candidates: List[Dict[str, Any]] = []
-        
         # 处理需要排除的平台
         if exclude_platforms is None:
             exclude_platforms = []
@@ -448,11 +444,13 @@ class DownloaderCore:
         # 移除需要排除的平台
         platforms_to_search = [p for p in platforms_to_search if p not in exclude_platforms]
         
+        # 如果指定了平台，则优先搜索该平台
         if item.platform:
             mapped_platform = self._map_platform_name(item.platform)
             if mapped_platform in platforms_to_search:
                 platforms_to_search.insert(0, platforms_to_search.pop(platforms_to_search.index(mapped_platform)))
 
+        # 遍历平台，逐一搜索
         for platform in platforms_to_search:
             try:
                 session_logger.info(f"正在平台 '{platform}' 上搜索 '{search_term}'...")
@@ -469,6 +467,7 @@ class DownloaderCore:
                     songs_list = songs_data.get('list', [])
 
                 if songs_list and isinstance(songs_list, list):
+                    candidates: List[Dict[str, Any]] = []
                     for result in songs_list:
                         # API返回的字段是name和artist
                         title_match = fuzz.ratio(item.title, result.get('name', ''))
@@ -485,25 +484,29 @@ class DownloaderCore:
                         }
                         candidates.append(candidate)
 
-                        if score > highest_score:
-                            highest_score = score
-                            best_match = candidate
+                    # Filter candidates with score > 70 for this platform
+                    high_score_candidates = [c for c in candidates if c['score'] > 70]
+                    
+                    # 如果当前平台找到了高匹配度的候选结果，则返回这些结果
+                    # 这样调用者可以立即尝试下载这些候选结果
+                    if high_score_candidates:
+                        session_logger.info(f"在平台 '{platform}' 上找到 {len(high_score_candidates)} 个高匹配度候选结果。")
+                        # 可以选择返回分数最高的一个，或者返回所有高分候选
+                        # 这里为了简化，返回第一个高分候选的ID和平台，以及所有高分候选列表
+                        best_candidate = high_score_candidates[0]
+                        session_logger.debug(f"返回平台 '{platform}' 的最佳候选: {best_candidate}")
+                        return best_candidate.get('song_id'), best_candidate.get('platform'), high_score_candidates
+
             except APIError as e:
                 session_logger.warning(f"在平台 '{platform}' 上搜索时出错: {e}")
                 continue
             except Exception as e:
                 session_logger.warning(f"在平台 '{platform}' 上搜索时发生未知错误: {e}")
                 continue
-
-        # Filter candidates with score > 70
-        high_score_candidates = [c for c in candidates if c['score'] > 70]
         
-        if best_match and highest_score > 70:
-            session_logger.info(f"为 '{item.title}' 找到最佳匹配: {best_match}，分数为 {highest_score}")
-            return best_match.get('song_id'), best_match.get('platform'), high_score_candidates
-        
-        session_logger.warning(f"未能为 '{item.title}' 找到足够匹配的结果 (最高分: {highest_score})。")
-        raise APIError(f"在所有平台上都未能找到 '{search_term}' 的可下载版本。")
+        session_logger.warning(f"在所有可用平台上都未能为 '{item.title}' 找到高匹配度的结果。")
+        # 如果所有平台都搜索完毕仍未找到，则抛出异常
+        raise APIError(f"在所有平台上都未能找到 '{search_term}' 的高匹配度可下载版本。")
 
     async def download(self, item: DownloadQueueItem, preferred_quality: str = '无损', download_lyrics: bool = False, session_logger: Optional[logging.Logger] = None) -> str:
         """执行单个下载任务。"""
@@ -546,113 +549,83 @@ class DownloaderCore:
                 song_id = None
                 platform = None # 同时清空 platform
         
-        # 步骤 2: 如果没有 song_id 或直接下载失败，则进行搜索
-        candidates_list = []
-        failed_platforms = []  # Track platforms that have failed
+        # 步骤 2: 如果没有 song_id 或直接下载失败，则进行逐一平台搜索和下载
+        failed_platforms = []  # Track platforms that have failed or produced low-quality results
         if not song_id:
-            session_logger.info(f"步骤 2: 查找歌曲 ID for '{enriched_item.title}'")
-            try:
-                song_id, platform, candidates_list = await self._find_song_id(enriched_item, session_logger, failed_platforms)
-                if not song_id or not platform:
-                    raise APIError(f"未能找到 '{enriched_item.title}' 的有效歌曲 ID。")
-                session_logger.info(f"步骤 2 完成. 找到歌曲 ID: {song_id}, 平台: {platform}")
-            except APIError as e:
-                session_logger.error(f"下载 '{enriched_item.title}' 失败，因为无法找到匹配项: {e}")
-                raise e
-
-        # 步骤 3: 使用找到的ID进行下载
-        download_success = False
-        last_exception = None
-        try:
-            session_logger.info(f"步骤 3: 提交下载任务 for '{enriched_item.title}'")
-            file_path = await loop.run_in_executor(
-                None,
-                self.downloader.download_song,
-                enriched_item, # 传递补全信息后的 item
-                song_id,
-                platform,
-                self.download_path,
-                preferred_quality,
-                download_lyrics,
-                session_logger
-            )
-            session_logger.info(f"步骤 3 完成. '{enriched_item.title}' 的下载任务已成功提交。文件路径: {file_path}")
-            download_success = True
-            return file_path
-        
-        except APIError as e:
-            last_exception = e
-            session_logger.error(f"使用首选项下载 '{enriched_item.title}' 失败: {e}")
-        except Exception as e:
-            last_exception = e
-            session_logger.error(f"下载 '{enriched_item.title}' 时发生未知错误: {e}", exc_info=True)
-        
-        # 如果首选下载失败，尝试备选方案
-        if not download_success and candidates_list:
-            session_logger.info(f"开始尝试备选下载源 for '{enriched_item.title}'...")
-            # Remove the already tried item from candidates
-            remaining_candidates = [c for c in candidates_list if not (c['song_id'] == song_id and c['platform'] == platform)]
+            session_logger.info(f"步骤 2: 开始逐一平台搜索并尝试下载 '{enriched_item.title}'...")
             
-            for candidate in remaining_candidates:
+            while True: # 循环搜索，直到成功或所有平台都失败
                 try:
-                    candidate_song_id = candidate['song_id']
-                    candidate_platform = candidate['platform']
-                    candidate_score = candidate['score']
+                    # 调用修改后的 _find_song_id，它会在找到高匹配度结果的平台后立即返回
+                    song_id, platform, candidates_list = await self._find_song_id(enriched_item, session_logger, failed_platforms)
+                    if not song_id or not platform:
+                        # 理论上 _find_song_id 会抛出异常，但如果返回了无效ID/平台，也应处理
+                        raise APIError(f"搜索返回了无效的歌曲 ID 或平台。")
                     
-                    session_logger.info(f"尝试备选下载源: ID={candidate_song_id}, Platform={candidate_platform}, Score={candidate_score}")
-                    file_path = await loop.run_in_executor(
-                        None,
-                        self.downloader.download_song,
-                        enriched_item,
-                        candidate_song_id,
-                        candidate_platform,
-                        self.download_path,
-                        preferred_quality,
-                        download_lyrics,
-                        session_logger
-                    )
-                    # Check if this file is acceptable
-                    if is_file_acceptable(file_path, session_logger):
-                        session_logger.info(f"备选下载成功且文件合格: {file_path}")
-                        download_success = True
-                        return file_path
-                    else:
-                        # If not acceptable, delete the file and continue to next candidate
-                        try:
-                            os.remove(file_path)
-                            session_logger.info(f"已删除低质量的备选文件: {file_path}")
-                        except OSError as remove_err:
-                            session_logger.warning(f"删除低质量备选文件 '{file_path}' 时出错: {remove_err}")
-                        
-                        # Add platform to failed platforms list
-                        if candidate_platform not in failed_platforms:
-                            failed_platforms.append(candidate_platform)
+                    session_logger.info(f"在平台 '{platform}' 上找到候选结果，开始尝试下载...")
+                    
+                    # 尝试下载找到的候选结果
+                    try:
+                        file_path = await loop.run_in_executor(
+                            None,
+                            self.downloader.download_song,
+                            enriched_item, # 传递补全信息后的 item
+                            song_id,
+                            platform,
+                            self.download_path,
+                            preferred_quality,
+                            download_lyrics,
+                            session_logger
+                        )
+                        # Check if this file is acceptable (质量合格)
+                        if is_file_acceptable(file_path, session_logger):
+                            session_logger.info(f"下载成功且文件合格: {file_path}")
+                            return file_path
+                        else:
+                            # If not acceptable, delete the file
+                            try:
+                                os.remove(file_path)
+                                session_logger.info(f"已删除低质量文件: {file_path}")
+                            except OSError as remove_err:
+                                session_logger.warning(f"删除低质量文件 '{file_path}' 时出错: {remove_err}")
                             
+                            # 将产生低质量文件的平台加入排除列表，以便下次搜索时跳过
+                            if platform not in failed_platforms:
+                                failed_platforms.append(platform)
+                            session_logger.info(f"来自平台 '{platform}' 的结果因质量不合格被排除，将继续搜索其他平台。")
+                            
+                    except APIError as e:
+                        session_logger.warning(f"使用平台 '{platform}' 下载失败: {e}")
+                        # 将下载失败的平台加入排除列表
+                        if platform not in failed_platforms:
+                            failed_platforms.append(platform)
+                        # 继续循环，尝试下一个平台
+                    
                 except APIError as e:
-                    session_logger.warning(f"备选下载源失败 (ID={candidate_song_id}, Platform={candidate_platform}): {e}")
-                    # Add platform to failed platforms list
-                    if candidate_platform not in failed_platforms:
-                        failed_platforms.append(candidate_platform)
-                    continue
+                    # 如果 _find_song_id 抛出异常，说明在所有剩余平台上都未能找到高匹配度结果
+                    session_logger.error(f"下载 '{enriched_item.title}' 失败: {e}")
+                    # 所有平台都已尝试且失败，抛出最终异常
+                    raise e
                 except Exception as e:
-                    session_logger.warning(f"备选下载源发生未知错误 (ID={candidate_song_id}, Platform={candidate_platform}): {e}", exc_info=True)
-                    # Add platform to failed platforms list
-                    if candidate_platform not in failed_platforms:
-                        failed_platforms.append(candidate_platform)
-                    continue
-            
-            # If we still haven't succeeded, try searching again excluding failed platforms
-            if not download_success and failed_platforms:
-                session_logger.info(f"备选下载源已用尽，尝试在排除失败平台后重新搜索 for '{enriched_item.title}'...")
+                    session_logger.error(f"下载 '{enriched_item.title}' 时发生未知错误: {e}", exc_info=True)
+                    # 所有平台都已尝试且失败，抛出最终异常
+                    raise APIError(f"下载 '{enriched_item.title}' 时发生未知错误: {e}") from e
+
+        else:
+            # 步骤 3 (仅当有初始 song_id 且直接下载失败时): 使用找到的ID进行下载 (回退逻辑)
+            # 注意：如果初始 song_id 下载失败，我们已经在上面的逻辑中清空了 song_id 和 platform
+            # 这部分代码实际上不会被执行，因为如果初始下载失败，song_id 会被设为 None，
+            # 从而进入上面的 while True 循环。
+            # 但为了逻辑完整性，我们保留一个简化的直接下载逻辑。
+            session_logger.info(f"步骤 3: 使用初始找到的ID进行下载 (如果有的话) for '{enriched_item.title}'")
+            if song_id and platform:
                 try:
-                    new_song_id, new_platform, new_candidates_list = await self._find_song_id(enriched_item, session_logger, failed_platforms)
-                    # Try to download with the newly found candidate
                     file_path = await loop.run_in_executor(
                         None,
                         self.downloader.download_song,
                         enriched_item,
-                        new_song_id,
-                        new_platform,
+                        song_id,
+                        platform,
                         self.download_path,
                         preferred_quality,
                         download_lyrics,
@@ -660,29 +633,28 @@ class DownloaderCore:
                     )
                     # Check if this file is acceptable
                     if is_file_acceptable(file_path, session_logger):
-                        session_logger.info(f"重新搜索后下载成功且文件合格: {file_path}")
-                        download_success = True
+                        session_logger.info(f"直接下载成功且文件合格: {file_path}")
                         return file_path
                     else:
                         # If not acceptable, delete the file
                         try:
                             os.remove(file_path)
-                            session_logger.info(f"已删除重新搜索后下载的低质量文件: {file_path}")
+                            session_logger.info(f"已删除低质量的直接下载文件: {file_path}")
                         except OSError as remove_err:
-                            session_logger.warning(f"删除重新搜索后下载的低质量文件 '{file_path}' 时出错: {remove_err}")
-                            
+                            session_logger.warning(f"删除低质量直接下载文件 '{file_path}' 时出错: {remove_err}")
+                        # 如果初始ID下载得到的文件质量不合格，也应该失败
+                        raise APIError(f"使用初始ID下载的文件质量不合格。")
+                
                 except APIError as e:
-                    session_logger.warning(f"重新搜索后下载失败: {e}")
+                    session_logger.error(f"使用初始ID下载 '{enriched_item.title}' 失败: {e}")
+                    raise e
                 except Exception as e:
-                    session_logger.warning(f"重新搜索后下载发生未知错误: {e}", exc_info=True)
-            
-            session_logger.info(f"所有备选下载源均已尝试且失败 for '{enriched_item.title}'。")
-        
-        # If we reach here, all download attempts failed
-        if last_exception:
-            raise last_exception
-        else:
-            raise APIError(f"下载 '{enriched_item.title}' 失败，所有备选源也已尝试且失败。")
+                    session_logger.error(f"使用初始ID下载 '{enriched_item.title}' 时发生未知错误: {e}", exc_info=True)
+                    raise APIError(f"使用初始ID下载 '{enriched_item.title}' 时发生未知错误: {e}") from e
+            else:
+                # 这种情况理论上不应该发生，因为我们是在 else 分支里
+                session_logger.error(f"逻辑错误：在步骤3中，song_id 或 platform 为空。")
+                raise APIError("下载逻辑错误：song_id 或 platform 未正确设置。")
 
 # 实例化下载器核心
 downloader = DownloaderCore()
