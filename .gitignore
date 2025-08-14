@@ -29,6 +29,7 @@ backend/Downloads/
 # Claude files
 .claude/
 CLAUDE.md
+GEMINI.md
 
 # Temporary files
 secrets-to-remove.txt
@@ -43,4 +44,4 @@ web/dist/
 scripts/test_*.py
 unmatched.json
 backend/tests/enhanced_matching_analysis_output.json
-GEMINI.md
+
