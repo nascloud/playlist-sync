@@ -71,6 +71,25 @@ def normalize_string(text: str) -> str:
     """标准化字符串，用于模糊比较。"""
     return _normalize_string(text)
 
+def prepare_search_term(title: str) -> str:
+    """为 library.search 准备查询词，仅进行轻量级处理以最大化召回率。
+       处理：转小写、全角转半角、移除括号内容、移除版本关键词。
+    """
+    if not title:
+        return ""
+    # 1. 统一转为小写
+    text = title.lower()
+    # 2. 全角转半角
+    text = text.translate(str.maketrans('１２３４５６７８９０ａｂｃｄｅｆｇｈｉｊｋｌｍｎｏｐｑｒｓｔｕｖｗｘｙｚＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ', 
+                                        '1234567890abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+    # 3. 移除括号内的内容 (新增)
+    text = _remove_brackets(text)
+    # 4. 移除版本关键词
+    text = _remove_keywords(text)
+    # 5. 移除多余的空格
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
+
 def _extract_core_title(norm_title: str) -> str:
     """从标准化标题中提取核心标题，只移除括号内容。"""
     if not norm_title:
@@ -171,17 +190,18 @@ def _calculate_artist_score(norm_artist: str, plex_artist: str) -> int:
 
     return int(combined_score)
 
-def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, norm_album: str, core_title: str) -> float:
+def _calculate_enhanced_score(track: Track, norm_title: str, norm_artist: str, norm_album: str, scoring_core_title: str) -> float:
     """计算增强版综合匹配分数。"""
     try:
         plex_norm_title = normalize_string(track.title)
-        plex_core_title = _extract_core_title(plex_norm_title)
+        plex_scoring_core_title = _extract_core_title(plex_norm_title)
         plex_artist = normalize_string(track.grandparentTitle or "")
         plex_album = normalize_string(track.parentTitle or "")
 
         # --- 标题评分 ---
         title_score = fuzz.ratio(norm_title, plex_norm_title)
-        core_title_score = fuzz.ratio(core_title, plex_core_title)
+        # 使用传入的 scoring_core_title 和 Plex 端计算出的 plex_scoring_core_title 进行评分
+        core_title_score = fuzz.ratio(scoring_core_title, plex_scoring_core_title)
         # 结合原始标题和核心标题分数 (这里给原始标题更高权重)
         combined_title_score = (title_score * 0.7) + (core_title_score * 0.3)
 
@@ -305,8 +325,11 @@ class PlexService:
 
     def _find_track_with_score_sync(self, title: str, artist: str, album: str, library: MusicSection) -> Tuple[Optional[Track], int]:
         """使用增强版匹配策略查找音轨。"""
+        # 为搜索准备查询词，仅进行轻量级处理
+        search_term = prepare_search_term(title)
+        # 用于精细化评分的标准化标题和核心标题
         norm_title = normalize_string(title)
-        core_title = _extract_core_title(norm_title)
+        scoring_core_title = _extract_core_title(norm_title)
         norm_artist = normalize_string(artist)
         norm_album = normalize_string(album)
 
@@ -315,12 +338,14 @@ class PlexService:
 
         try:
             # 核心标题搜索：最大化召回率
-            results = library.search(core_title, libtype='track')
-            logger.debug(f"核心标题 '{core_title}' 搜索到 {len(results)} 个候选结果。")
+            # 使用轻量级处理后的标题进行搜索
+            results = library.search(search_term, libtype='track')
+            logger.debug(f"核心标题 '{search_term}' 搜索到 {len(results)} 个候选结果。")
 
             # 对每个候选结果进行精细化评分
+            # 传入 norm_title 和 scoring_core_title 用于评分
             for track in results:
-                score = _calculate_enhanced_score(track, norm_title, norm_artist, norm_album, core_title)
+                score = _calculate_enhanced_score(track, norm_title, norm_artist, norm_album, scoring_core_title)
                 candidates.append((track, score))
 
             # 按分数排序
