@@ -8,19 +8,64 @@ __pycache__/
 *.pyo
 *.pyd
 .venv/
+.pytest_cache/
+.coverage
+.pytest_cache/
+pytest_cache/
+
+# Node.js
+node_modules/
+web/node_modules/
 
 # Database - 非常重要：防止数据库文件被复制到镜像中
 database.sqlite
 backend/database.sqlite
+*.sqlite
 
 # Logs & Downloads
 backend/logs/
 backend/Downloads/
+*.log
 
 # IDE
 .vscode/
 .idea/
+.claude/
 
 # OS
 .DS_Store
 Thumbs.db
+
+# Build artifacts
+web/dist/
+backend/dist/
+
+# Test files
+backend/tests/
+unmatched.json
+backend/tests/enhanced_matching_analysis_output.json
+scripts/test_*.py
+
+# Documentation with sensitive info
+docs/AIAPI.md
+
+# Environment variables
+.env
+backend/.env
+
+# Temporary files
+secrets-to-remove.txt
+
+# Downloaded files
+backend/Downloads/
+
+# Other
+*.md
+README.md
+GEMINI.md
+CLAUDE.md
+Dockerfile
+.dockerignore
+docker-compose.yml
+backend/run_enhanced_matching_test.py
+backend/pytest.ini
