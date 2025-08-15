@@ -7,6 +7,7 @@ from typing import Optional, Tuple, Dict, Any, List
 
 import requests
 import httpx
+import tenacity
 from tenacity import retry, stop_after_attempt, wait_exponential
 from schemas.download import DownloadQueueItem
 import logging
@@ -543,6 +544,13 @@ class DownloaderCore:
                 )
                 session_logger.info(f"步骤 1 完成. 直接下载成功。文件路径: {file_path}")
                 return file_path
+            except tenacity.RetryError as retry_err:
+                # 捕获 RetryError，获取原始的 APIError
+                original_err = retry_err.last_attempt.exception()
+                session_logger.warning(f"使用提供的 ID '{song_id}' 直接下载失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
+                # 直接下载失败，清空 song_id 和 platform，进入搜索流程
+                song_id = None
+                platform = None # 同时清空 platform
             except APIError as e:
                 session_logger.warning(f"使用提供的 ID '{song_id}' 直接下载失败: {e}。将回退到搜索模式。")
                 # 直接下载失败，清空 song_id 和 platform，进入搜索流程
