@@ -90,6 +90,9 @@ class MusicDownloader:
             # Check if the API returned an error in the response body
             if json_response.get('code') != 200:
                 error_msg = json_response.get('message', 'API 返回未知错误')
+                # 特别处理"未知异常"错误，记录更多调试信息
+                if json_response.get('code') == 400 and "未知异常" in error_msg:
+                    logger.warning(f"API返回400未知异常错误，URL: {url}, 参数: {all_params}")
                 raise APIError(f"API 错误 [{json_response.get('code')}]: {error_msg}", status_code=json_response.get('code'))
 
             return json_response
@@ -100,6 +103,9 @@ class MusicDownloader:
                 error_response = http_err.response.json()
                 if 'code' in error_response and 'message' in error_response:
                     error_msg = error_response.get('message', 'API 返回未知错误')
+                    # 特别处理"未知异常"错误，记录更多调试信息
+                    if error_response.get('code') == 400 and "未知异常" in error_msg:
+                        logger.warning(f"API返回400未知异常错误，URL: {url}, 参数: {all_params}")
                     raise APIError(f"API 错误 [{error_response.get('code')}]: {error_msg}", status_code=error_response.get('code'))
             except json.JSONDecodeError:
                 pass  # If we can't parse JSON, fall back to the original error
@@ -434,17 +440,17 @@ class DownloaderCore:
                     song_id = None
                     platform = None  # 同时清空 platform
             except tenacity.RetryError as retry_err:
-                # 捕获 RetryError，获取原始的 APIError
-                original_err = retry_err.last_attempt.exception()
-                session_logger.warning(f"获取歌曲信息失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
-                # 直接下载失败，清空 song_id 和 platform，进入搜索流程
-                song_id = None
-                platform = None  # 同时清空 platform
-            except APIError as e:
-                session_logger.warning(f"获取歌曲信息失败: {e}。将回退到搜索模式。")
-                # 直接下载失败，清空 song_id 和 platform，进入搜索流程
-                song_id = None
-                platform = None  # 同时清空 platform
+                    # 捕获 RetryError，获取原始的 APIError
+                    original_err = retry_err.last_attempt.exception()
+                    session_logger.warning(f"获取歌曲信息失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
+                    # 直接下载失败，清空 song_id 和 platform，进入搜索流程
+                    song_id = None
+                    platform = None  # 同时清空 platform
+                except APIError as e:
+                    session_logger.warning(f"获取歌曲信息失败: {e}。将回退到搜索模式。")
+                    # 直接下载失败，清空 song_id 和 platform，进入搜索流程
+                    song_id = None
+                    platform = None  # 同时清空 platform
         
         # 步骤 2: 如果没有 song_id 或直接下载失败，则进行逐一平台搜索和下载
         failed_platforms = []  # Track platforms that have failed or produced low-quality results
@@ -490,7 +496,13 @@ class DownloaderCore:
                             session_logger.info(f"来自平台 '{platform}' 的结果因质量不合格被排除，将继续搜索其他平台。")
                             
                     except APIError as e:
-                        session_logger.warning(f"使用平台 '{platform}' 下载失败: {e}")
+                        # 特别处理"未知异常"错误
+                        if "未知异常" in str(e):
+                            session_logger.warning(f"使用平台 '{platform}' 下载失败，遇到'未知异常'错误: {e}。将跳过此平台并记录详细信息。")
+                            # 记录更多调试信息
+                            session_logger.warning(f"详细信息 - 歌曲ID: {song_id}, 平台: {platform}")
+                        else:
+                            session_logger.warning(f"使用平台 '{platform}' 下载失败: {e}")
                         # 将下载失败的平台加入排除列表
                         if platform not in failed_platforms:
                             failed_platforms.append(platform)
