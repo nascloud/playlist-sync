@@ -4,10 +4,10 @@ import sqlite3
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 from core.database import get_db_connection
-from services.download_db_service import download_db_service
+from services.download.download_db_service import download_db_service
 from schemas.download import DownloadQueueItem, DownloadQueueItemCreate
 from core.logging_config import download_log_manager
-from services.downloader_core import downloader as downloader_core
+from services.download.downloader_core import downloader as downloader_core
 from services.settings_service import SettingsService
 from services.auto_playlist_service import AutoPlaylistService
 import logging

@@ -6,7 +6,7 @@ import logging
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from services.downloader_core import downloader
+from services.download.downloader_core import downloader
 
 # 创建一个简单的logger
 logging.basicConfig(level=logging.INFO)

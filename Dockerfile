@@ -23,7 +23,10 @@ WORKDIR /usr/src/app
 
 # 复制后端项目文件并安装依赖
 COPY backend/pyproject.toml backend/uv.lock ./
-RUN uv sync --no-cache
+RUN uv pip install --system . --no-cache-dir
+
+# 卸载 uv
+RUN pip uninstall -y uv
 
 # 复制后端所有代码
 COPY backend/ .

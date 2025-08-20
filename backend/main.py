@@ -11,7 +11,7 @@ from api.v1.api import api_router
 from api.v1.endpoints import auth
 from core.config import settings
 from utils.scheduler import set_scheduler, TaskScheduler
-from services.download_service import set_download_service, DownloadService, get_download_service
+from services.download.download_service import set_download_service, DownloadService, get_download_service
 from services.settings_service import SettingsService
 from services.sync_service import SyncService
 from core.logging_config import setup_logging

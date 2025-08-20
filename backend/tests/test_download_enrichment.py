@@ -8,20 +8,29 @@ from datetime import datetime
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from services.downloader_core import downloader
+from services.download.downloader_core import downloader
 
 # 创建一个简单的logger
 logging.basicConfig(level=logging.INFO)
 test_logger = logging.getLogger("test_enrichment")
 
 # 创建一个模拟的DownloadQueueItem类
+
 class MockDownloadQueueItem:
     def __init__(self, title, artist, album, platform, song_id):
+        self.id = 1  # 添加id属性
+        self.session_id = 1  # 添加session_id属性
         self.title = title
         self.artist = artist
         self.album = album
         self.platform = platform
         self.song_id = song_id
+        self.status = "pending"
+        self.quality = "无损"
+        self.retry_count = 0
+        self.error_message = None
+        self.created_at = datetime.now()
+        self.updated_at = datetime.now()
 
 async def test_qq_info_enrichment():
     '''测试在下载阶段补全QQ音乐歌曲信息'''

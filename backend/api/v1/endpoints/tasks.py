@@ -4,7 +4,7 @@ from schemas.tasks import Task, TaskCreate, TaskList, TaskUpdate
 from schemas.response import SuccessResponse
 from services.task_service import TaskService
 from services.sync_service import SyncService
-from services.download_service import get_download_service, DownloadService
+from services.download.download_service import get_download_service, DownloadService
 from services.log_service import LogService
 from utils.scheduler import get_scheduler, TaskScheduler
 from pydantic import BaseModel, HttpUrl

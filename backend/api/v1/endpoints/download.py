@@ -16,10 +16,10 @@ from schemas.download_schemas import (
     SessionStatusResponse
 )
 from services.settings_service import SettingsService
-from services.download_service import get_download_service, DownloadService
-from services.downloader_core import downloader
-from services.download_db_service import download_db_service
-from services.download_queue_manager import download_queue_manager
+from services.download.download_service import get_download_service, DownloadService
+from services.download.downloader_core import downloader
+from services.download.download_db_service import download_db_service
+from services.download.download_queue_manager import download_queue_manager
 from core.logging_config import LOGS_DIR, download_log_manager
 from core.config import settings as app_settings
 

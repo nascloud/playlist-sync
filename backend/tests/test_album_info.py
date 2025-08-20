@@ -7,7 +7,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from services.playlist_service import PlaylistService
-from services.download_service import DownloadService
+from services.download.download_service import DownloadService
 from services.settings_service import SettingsService
 from core.database import init_db
 

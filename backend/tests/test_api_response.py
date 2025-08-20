@@ -5,7 +5,7 @@ import os
 # 添加项目根目录到 Python 路径
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from services.downloader_core import MusicDownloader
+from services.download.downloader_core import MusicDownloader
 
 async def test_api_response():
     '''测试API响应格式'''

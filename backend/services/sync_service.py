@@ -9,7 +9,7 @@ import logging
 from typing import Callable
 from utils.progress_manager import progress_manager
 from asyncio import Lock
-from services.download_service import DownloadService
+from services.download.download_service import DownloadService
 from services.auto_playlist_service import AutoPlaylistService
 
 logger = logging.getLogger(__name__)

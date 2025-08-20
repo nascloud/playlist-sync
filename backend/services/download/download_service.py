@@ -5,11 +5,11 @@ from typing import List, Dict, Any, Optional
 
 from core.database import get_db_connection
 from services.settings_service import SettingsService
-from services.download_queue_manager import download_queue_manager
+from services.download.download_queue_manager import download_queue_manager
 from schemas.download import DownloadQueueItemCreate
 from schemas.download_schemas import DownloadSingleRequest
 from services.task_service import TaskService
-from .downloader_core import DownloaderCore, downloader
+from services.download.downloader_core import DownloaderCore, downloader
 
 logger = logging.getLogger(__name__)
 

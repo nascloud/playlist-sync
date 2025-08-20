@@ -4,7 +4,7 @@ set -e
 
 # 应用数据库迁移
 echo "Running database migrations..."
-uv run alembic upgrade head
+python -m alembic upgrade head
 
 # 执行传递给脚本的任何命令（例如，Dockerfile中的CMD）
 # 如果没有命令，则 docker-compose.yml 中的 command 将被执行
@@ -14,4 +14,4 @@ echo "Current directory: $(pwd)"
 echo "Directory listing:"
 ls -la
 echo "--- END DIAGNOSTICS ---"
-exec uv run "$@"
+exec python -m "$@"
