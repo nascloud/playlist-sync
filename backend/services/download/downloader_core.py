@@ -18,8 +18,11 @@ from services.download.metadata_handler import MetadataHandler
 from services.download.platform_service import PlatformService
 from services.download.quality_checker import QualityChecker
 from services.download.qq_music_service import QQMusicService
-from services.download.download_constants import QUALITY_ORDER
+from services.download.download_constants import QUALITY_ORDER, API_VALIDATION_TITLE_THRESHOLD, API_VALIDATION_ARTIST_THRESHOLD
 from services.download.download_exceptions import APIError
+
+# 添加模糊匹配库
+from thefuzz import fuzz
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +35,12 @@ class MusicDownloader:
             raise ValueError("API key 不能为空")
         self.api_key = api_key
         self.base_url = "https://aiapi.vip/v1"
-        # 使用 httpx.AsyncClient 替代 requests
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        # 使用 httpx.AsyncClient 替代 requests，配置允许重定向
+        self.http_client = httpx.AsyncClient(
+            timeout=30.0,
+            follow_redirects=True,  # 明确启用重定向跟随
+            max_redirects=5  # 设置最大重定向次数
+        )
 
     async def close(self):
         """关闭HTTP客户端"""
@@ -169,7 +176,12 @@ class MusicDownloader:
         log.info(f"选择音质: {actual_quality}。正在下载到: {song_filepath}")
         
         try:
+            # 使用GET请求下载文件，httpx会自动处理重定向
             async with self.http_client.stream("GET", song_url, timeout=180.0) as response:
+                # 如果响应是重定向，记录日志但让httpx自动处理
+                if response.status_code in (301, 302, 303, 307, 308):
+                    log.info(f"收到重定向响应 {response.status_code}，httpx将自动跟随重定向...")
+                
                 response.raise_for_status()
                 with open(song_filepath, 'wb') as f:
                     async for chunk in response.aiter_bytes(chunk_size=8192):
@@ -342,6 +354,39 @@ class DownloaderCore:
         # 如果所有平台都搜索完毕仍未找到，则抛出异常
         raise APIError(f"在所有平台上都未能找到 '{search_term}' 的高匹配度可下载版本。")
 
+    def _validate_api_response(self, music_info: dict, item: DownloadQueueItem) -> Tuple[bool, str]:
+        """验证API响应与请求信息的一致性
+        :param music_info: API返回的歌曲信息
+        :param item: 下载队列项
+        :return: (是否通过验证, 验证信息)
+        """
+        try:
+            # 从API响应中提取歌曲信息
+            api_title = music_info.get('gm') or music_info.get('info', {}).get('name', '')
+            api_artist = music_info.get('gs') or music_info.get('info', {}).get('artist', '')
+            
+            # 如果API没有返回有效信息，认为验证失败
+            if not api_title or not api_artist:
+                return False, "API未返回有效的歌曲标题或艺术家信息"
+            
+            # 使用模糊匹配计算相似度
+            requested_title = item.title or ''
+            requested_artist = item.artist or ''
+            
+            title_score = fuzz.ratio(requested_title.lower(), api_title.lower())
+            artist_score = fuzz.ratio(requested_artist.lower(), api_artist.lower())
+            
+            # 记录详细信息用于调试
+            validation_details = f"请求:'{requested_title} by {requested_artist}', 实际:'{api_title} by {api_artist}', 标题匹配度:{title_score}, 艺术家匹配度:{artist_score}"
+            
+            # 设定阈值，如果匹配度低于阈值则认为不一致
+            if title_score < API_VALIDATION_TITLE_THRESHOLD or artist_score < API_VALIDATION_ARTIST_THRESHOLD:
+                return False, f"信息匹配度不足 - {validation_details}"
+            
+            return True, f"信息匹配度良好 - {validation_details}"
+        except Exception as e:
+            return False, f"验证过程中发生错误: {str(e)}"
+
     async def download(self, item: DownloadQueueItem, preferred_quality: str = '无损', 
                       download_lyrics: bool = False, session_logger: Optional[logging.Logger] = None) -> str:
         """执行单个下载任务。"""
@@ -360,30 +405,43 @@ class DownloaderCore:
         song_id = enriched_item.song_id
         platform = self.platform_service.map_platform_name(enriched_item.platform) if enriched_item.platform else None
 
-        # 步骤 1: 如果有现成的 song_id 和 platform，直接尝试下载
+        # 步骤 1: 如果有现成的 song_id 和 platform，先验证再尝试下载
         if song_id and platform:
-            session_logger.info(f"步骤 1: 使用提供的歌曲 ID '{song_id}' 和平台 '{platform}' 直接下载 '{enriched_item.title}'")
+            session_logger.info(f"步骤 1: 验证提供的歌曲 ID '{song_id}' 和平台 '{platform}' 的信息匹配度")
             try:
-                file_path = await self.downloader.download_song(
-                    enriched_item,  # 传递补全信息后的 item
-                    song_id,
-                    platform,
-                    self.download_path,
-                    preferred_quality,
-                    download_lyrics,
-                    session_logger
-                )
-                session_logger.info(f"步骤 1 完成. 直接下载成功。文件路径: {file_path}")
-                return file_path
+                # 获取API返回的歌曲详细信息
+                music_info = await self.downloader.get_music_url(song_id, platform, info=True)
+                # 验证API返回信息与请求信息的一致性
+                is_valid, validation_msg = self._validate_api_response(music_info, enriched_item)
+                
+                if is_valid:
+                    session_logger.info(f"API响应验证通过: {validation_msg}")
+                    # 信息匹配，使用直接下载
+                    file_path = await self.downloader.download_song(
+                        enriched_item,  # 传递补全信息后的 item
+                        song_id,
+                        platform,
+                        self.download_path,
+                        preferred_quality,
+                        download_lyrics,
+                        session_logger
+                    )
+                    session_logger.info(f"步骤 1 完成. 直接下载成功。文件路径: {file_path}")
+                    return file_path
+                else:
+                    session_logger.warning(f"API响应验证失败: {validation_msg}。将回退到搜索模式。")
+                    # 信息不匹配，清空 song_id 和 platform，进入搜索流程
+                    song_id = None
+                    platform = None  # 同时清空 platform
             except tenacity.RetryError as retry_err:
                 # 捕获 RetryError，获取原始的 APIError
                 original_err = retry_err.last_attempt.exception()
-                session_logger.warning(f"使用提供的 ID '{song_id}' 直接下载失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
+                session_logger.warning(f"获取歌曲信息失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
                 # 直接下载失败，清空 song_id 和 platform，进入搜索流程
                 song_id = None
                 platform = None  # 同时清空 platform
             except APIError as e:
-                session_logger.warning(f"使用提供的 ID '{song_id}' 直接下载失败: {e}。将回退到搜索模式。")
+                session_logger.warning(f"获取歌曲信息失败: {e}。将回退到搜索模式。")
                 # 直接下载失败，清空 song_id 和 platform，进入搜索流程
                 song_id = None
                 platform = None  # 同时清空 platform
