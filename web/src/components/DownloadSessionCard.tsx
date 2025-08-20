@@ -93,6 +93,11 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
   };
 
   const progress = session.total_songs > 0 ? (session.success_count / session.total_songs) * 100 : 0;
+  
+  // 检查是否有失败的项目需要重试
+  const hasFailedItems = session.failed_count > 0 && 
+    session.items && 
+    session.items.some(item => item.status === 'failed');
 
   return (
     <div 
@@ -123,7 +128,7 @@ const DownloadSessionCard: React.FC<DownloadSessionCardProps> = ({ session, onUp
           {session.status === 'paused' && (
             <button onClick={handleResume} className="text-sm bg-green-500 text-white px-3 py-1 rounded">恢复</button>
           )}
-          {session.failed_count > 0 && (
+          {hasFailedItems && (
             <button 
               onClick={handleRetryFailed} 
               className="text-sm bg-blue-500 text-white px-3 py-1 rounded flex items-center"

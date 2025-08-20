@@ -184,6 +184,22 @@ async def retry_failed_items(session_id: int):
                 message=f"已将 {count} 个失败的项目重新加入下载队列。"
             )
         else:
+            # 检查是否是因为计数器不一致导致的问题
+            # 修复会话计数器并再次检查
+            loop = asyncio.get_running_loop()
+            success_count, failed_count = await loop.run_in_executor(
+                None, download_db_service.fix_session_counts, session_id
+            )
+            
+            if failed_count > 0:
+                # 计数器修复后有失败项目，再次尝试重试
+                count = await download_queue_manager.retry_failed_items_in_session(session_id)
+                if count > 0:
+                    return DownloadActionResponse(
+                        success=True, 
+                        message=f"已将 {count} 个失败的项目重新加入下载队列。"
+                    )
+            
             return DownloadActionResponse(
                 success=True,
                 message="没有失败的项目需要重试。"
@@ -202,9 +218,31 @@ async def retry_single_item(item_id: int):
                 message="项目已重新加入下载队列。"
             )
         else:
+            # 检查项目当前状态
+            loop = asyncio.get_running_loop()
+            item_details = await loop.run_in_executor(
+                None, download_db_service.get_item_details, item_id
+            )
+            
+            if item_details and item_details.status == 'failed':
+                # 项目状态是失败，但重试失败，可能是会话已完成
+                # 尝试修复会话并重新激活
+                session_id = item_details.session_id
+                await loop.run_in_executor(
+                    None, download_db_service.reactivate_session, session_id
+                )
+                
+                # 再次尝试重试
+                success = await download_queue_manager.retry_item(item_id)
+                if success:
+                    return DownloadActionResponse(
+                        success=True,
+                        message="项目已重新加入下载队列。"
+                    )
+            
             return DownloadActionResponse(
                 success=False,
-                message="无法重试该项目。项目可能不是失败状态。"
+                message="无法重试该项目。项目可能不是失败状态或会话已完成。"
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"重试项目时出错: {str(e)}")

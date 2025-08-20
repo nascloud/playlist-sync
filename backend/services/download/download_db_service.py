@@ -236,13 +236,49 @@ class DownloadDBService:
     def retry_queue_item(self, item_id: int):
         """重置失败的项目为待处理状态。"""
         def _retry_item(conn: sqlite3.Connection, item_id: int):
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE download_queue SET status = 'pending', error_message = NULL, retry_count = 0 WHERE id = ? AND status = 'failed'",
-                (item_id,)
-            )
-            conn.commit()
-            return cursor.rowcount > 0
+            try:
+                conn.isolation_level = 'EXCLUSIVE'
+                cursor = conn.cursor()
+                cursor.execute('BEGIN EXCLUSIVE')
+                
+                # 获取项目当前状态和session_id
+                cursor.execute(
+                    "SELECT status, session_id FROM download_queue WHERE id = ?",
+                    (item_id,)
+                )
+                item_info = cursor.fetchone()
+                
+                if not item_info or item_info['status'] != 'failed':
+                    conn.commit()
+                    return False
+                
+                session_id = item_info['session_id']
+                
+                # 1. 更新项目状态
+                cursor.execute(
+                    "UPDATE download_queue SET status = 'pending', error_message = NULL, retry_count = 0 WHERE id = ? AND status = 'failed'",
+                    (item_id,)
+                )
+                updated = cursor.rowcount > 0
+                
+                # 2. 如果项目被更新，相应更新会话的failed_count
+                if updated:
+                    # 更新会话的failed_count
+                    cursor.execute(
+                        "UPDATE download_sessions SET failed_count = failed_count - 1 WHERE id = ?",
+                        (session_id,)
+                    )
+                    # 将会话状态从completed改回active，以便重新处理
+                    cursor.execute(
+                        "UPDATE download_sessions SET status = 'active', completed_at = NULL WHERE id = ? AND status = 'completed'",
+                        (session_id,)
+                    )
+                
+                conn.commit()
+                return updated
+            except Exception:
+                conn.rollback()
+                raise
 
         return self._execute_in_thread(_retry_item, item_id)
 
@@ -280,14 +316,36 @@ class DownloadDBService:
     def retry_failed_items_in_session(self, session_id: int):
         """重试一个会话中所有失败的项目。"""
         def _retry_failed(conn: sqlite3.Connection, session_id: int):
-            cursor = conn.cursor()
-            cursor.execute(
-                "UPDATE download_queue SET status = 'pending', error_message = NULL, retry_count = 0 WHERE session_id = ? AND status = 'failed'",
-                (session_id,)
-            )
-            count = cursor.rowcount
-            conn.commit()
-            return count
+            try:
+                conn.isolation_level = 'EXCLUSIVE'
+                cursor = conn.cursor()
+                cursor.execute('BEGIN EXCLUSIVE')
+                
+                # 1. 更新失败项目的状态为pending
+                cursor.execute(
+                    "UPDATE download_queue SET status = 'pending', error_message = NULL, retry_count = 0 WHERE session_id = ? AND status = 'failed'",
+                    (session_id,)
+                )
+                count = cursor.rowcount
+                
+                # 2. 如果有项目被重置，相应更新会话的failed_count和状态
+                if count > 0:
+                    # 更新会话的failed_count
+                    cursor.execute(
+                        "UPDATE download_sessions SET failed_count = failed_count - ? WHERE id = ?",
+                        (count, session_id)
+                    )
+                    # 将会话状态从completed改回active，以便重新处理
+                    cursor.execute(
+                        "UPDATE download_sessions SET status = 'active', completed_at = NULL WHERE id = ? AND status = 'completed'",
+                        (session_id,)
+                    )
+                
+                conn.commit()
+                return count
+            except Exception:
+                conn.rollback()
+                raise
 
         return self._execute_in_thread(_retry_failed, session_id)
 
@@ -370,6 +428,51 @@ class DownloadDBService:
                 raise
         
         return self._execute_in_thread(_delete, session_id)
+
+    def get_item_details(self, item_id: int):
+        """获取单个队列项目的详细信息。"""
+        def _get_details(conn: sqlite3.Connection, item_id: int):
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM download_queue WHERE id = ?", (item_id,))
+            row = cursor.fetchone()
+            return row
+
+        return self._execute_in_thread(_get_details, item_id)
+
+    def fix_session_counts(self, session_id: int):
+        """修复会话的计数器，使其与实际项目状态一致。"""
+        def _fix_counts(conn: sqlite3.Connection, session_id: int):
+            try:
+                conn.isolation_level = 'EXCLUSIVE'
+                cursor = conn.cursor()
+                cursor.execute('BEGIN EXCLUSIVE')
+                
+                # 1. 计算实际的成功和失败项目数量
+                cursor.execute(
+                    "SELECT COUNT(*) as success_count FROM download_queue WHERE session_id = ? AND status = 'success'",
+                    (session_id,)
+                )
+                success_count = cursor.fetchone()['success_count']
+                
+                cursor.execute(
+                    "SELECT COUNT(*) as failed_count FROM download_queue WHERE session_id = ? AND status = 'failed'",
+                    (session_id,)
+                )
+                failed_count = cursor.fetchone()['failed_count']
+                
+                # 2. 更新会话的计数器
+                cursor.execute(
+                    "UPDATE download_sessions SET success_count = ?, failed_count = ? WHERE id = ?",
+                    (success_count, failed_count, session_id)
+                )
+                
+                conn.commit()
+                return success_count, failed_count
+            except Exception:
+                conn.rollback()
+                raise
+        
+        return self._execute_in_thread(_fix_counts, session_id)
 
     def get_full_queue_status(self) -> dict:
         """获取所有会话（包含其下所有项目）的层级结构列表。"""

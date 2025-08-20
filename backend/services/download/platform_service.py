@@ -27,7 +27,7 @@ class PlatformService:
         # 此方法将在重构后的DownloaderCore中实现具体逻辑
         pass
     
-    def filter_and_score_candidates(self, item, songs_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def filter_and_score_candidates(self, item, songs_list: List[Dict[str, Any]], platform: str) -> List[Dict[str, Any]]:
         """过滤并评分候选歌曲"""
         candidates: List[Dict[str, Any]] = []
         for result in songs_list:
@@ -39,7 +39,7 @@ class PlatformService:
             
             candidate = {
                 "song_id": result.get('id'),
-                "platform": result.get('platform'),  # 需要从调用上下文获取
+                "platform": platform,  # 使用传入的平台参数
                 "score": score,
                 "name": result.get('name'),
                 "artist": result.get('artist')

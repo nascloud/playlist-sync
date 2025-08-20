@@ -331,7 +331,7 @@ class DownloaderCore:
                     songs_list = songs_data.get('list', [])
 
                 if songs_list and isinstance(songs_list, list):
-                    candidates = self.platform_service.filter_and_score_candidates(item, songs_list)
+                    candidates = self.platform_service.filter_and_score_candidates(item, songs_list, platform)
                     
                     # Filter candidates with score > 70 for this platform
                     high_score_candidates = [c for c in candidates if c['score'] > 70]

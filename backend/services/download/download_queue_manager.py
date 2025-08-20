@@ -376,7 +376,25 @@ class DownloadQueueManager:
         if count > 0:
             print(f"会话 {session_id} 中的 {count} 个失败项目已被重新加入队列。")
             self.start_processing() # 确保队列正在运行
-        return count
+            return count
+        else:
+            # 检查是否是因为计数器不一致导致的问题
+            # 修复会话计数器并再次检查
+            success_count, failed_count = await loop.run_in_executor(
+                None, download_db_service.fix_session_counts, session_id
+            )
+            
+            if failed_count > 0:
+                # 计数器修复后有失败项目，再次尝试重试
+                count = await loop.run_in_executor(
+                    None, download_db_service.retry_failed_items_in_session, session_id
+                )
+                if count > 0:
+                    print(f"会话 {session_id} 中的 {count} 个失败项目已被重新加入队列。")
+                    self.start_processing() # 确保队列正在运行
+                    return count
+            
+            return 0
         
 # 实例化管理器，以便在应用的其他部分导入和使用
 download_queue_manager = DownloadQueueManager()
