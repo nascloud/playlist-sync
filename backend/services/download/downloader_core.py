@@ -440,17 +440,17 @@ class DownloaderCore:
                     song_id = None
                     platform = None  # 同时清空 platform
             except tenacity.RetryError as retry_err:
-                    # 捕获 RetryError，获取原始的 APIError
-                    original_err = retry_err.last_attempt.exception()
-                    session_logger.warning(f"获取歌曲信息失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
-                    # 直接下载失败，清空 song_id 和 platform，进入搜索流程
-                    song_id = None
-                    platform = None  # 同时清空 platform
-                except APIError as e:
-                    session_logger.warning(f"获取歌曲信息失败: {e}。将回退到搜索模式。")
-                    # 直接下载失败，清空 song_id 和 platform，进入搜索流程
-                    song_id = None
-                    platform = None  # 同时清空 platform
+                # 捕获 RetryError，获取原始的 APIError
+                original_err = retry_err.last_attempt.exception()
+                session_logger.warning(f"获取歌曲信息失败 (重试次数已用尽): {original_err}。将回退到搜索模式。")
+                # 直接下载失败，清空 song_id 和 platform，进入搜索流程
+                song_id = None
+                platform = None  # 同时清空 platform
+            except APIError as e:
+                session_logger.warning(f"获取歌曲信息失败: {e}。将回退到搜索模式。")
+                # 直接下载失败，清空 song_id 和 platform，进入搜索流程
+                song_id = None
+                platform = None  # 同时清空 platform
         
         # 步骤 2: 如果没有 song_id 或直接下载失败，则进行逐一平台搜索和下载
         failed_platforms = []  # Track platforms that have failed or produced low-quality results
