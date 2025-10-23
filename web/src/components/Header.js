@@ -1,9 +1,10 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
 import { useNavigate } from 'react-router-dom';
-import { LayoutDashboard, List, Settings, Music, DownloadCloud, LogOut } from 'lucide-react';
+import { LayoutDashboard, List, Settings, Music, DownloadCloud, Search, LogOut } from 'lucide-react';
 const navItems = [
     { id: 'dashboard', label: '仪表板', icon: LayoutDashboard, path: '/dashboard' },
-    { id: 'downloads', label: '下载', icon: DownloadCloud, path: '/downloads' },
+    { id: 'search', label: '搜索下载', icon: Search, path: '/search' },
+    { id: 'downloads', label: '下载管理', icon: DownloadCloud, path: '/downloads' },
     { id: 'logs', label: '日志', icon: List, path: '/logs' },
     { id: 'settings', label: '设置', icon: Settings, path: '/settings' },
 ];

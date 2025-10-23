@@ -6,14 +6,15 @@ from datetime import datetime
 import logging
 
 from schemas.download_schemas import (
-    DownloadSettings, 
-    DownloadSettingsCreate, 
+    DownloadSettings,
+    DownloadSettingsCreate,
     TestConnectionRequest,
     TestConnectionResponse,
     DownloadAllRequest,
     DownloadSingleRequest,
     DownloadActionResponse,
-    SessionStatusResponse
+    SessionStatusResponse,
+    SearchResponse
 )
 from services.settings_service import SettingsService
 from services.download.download_service import get_download_service, DownloadService
@@ -246,5 +247,42 @@ async def retry_single_item(item_id: int):
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"重试项目时出错: {str(e)}")
+
+@router.get("/search", response_model=SearchResponse)
+async def search_songs(
+    keyword: str,
+    platform: Optional[str] = None,
+    page: int = 1,
+    size: int = 10,
+    download_service: DownloadService = Depends(get_download_service)
+) -> Any:
+    """搜索歌曲。"""
+    try:
+        # 验证参数
+        if not keyword or not keyword.strip():
+            raise HTTPException(status_code=400, detail="搜索关键词不能为空")
+        
+        if page < 1:
+            page = 1
+        
+        if size < 1 or size > 50:
+            size = 10
+        
+        # 调用搜索服务
+        search_result = await download_service.search_songs(
+            keyword=keyword.strip(),
+            platform=platform,
+            page=page,
+            size=size
+        )
+        
+        return search_result
+        
+    except HTTPException:
+        # 重新抛出HTTP异常
+        raise
+    except Exception as e:
+        logging.exception(f"搜索歌曲时发生错误:")
+        raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 
 

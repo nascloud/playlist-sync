@@ -108,6 +108,31 @@ class DownloadSession(BaseModel):
     class Config:
         from_attributes = True
 
+class SearchResultItem(BaseModel):
+    """搜索结果项模型"""
+    song_id: str = Field(..., title="歌曲ID", description="歌曲的唯一标识")
+    title: str = Field(..., title="歌曲标题", description="歌曲的标题")
+    artist: str = Field(..., title="歌手", description="歌曲的歌手")
+    album: Optional[str] = Field(None, title="专辑", description="歌曲所属的专辑")
+    platform: str = Field(..., title="平台", description="音乐平台，如qq、netease等")
+    duration: Optional[int] = Field(None, title="时长", description="歌曲时长（秒）")
+    quality: Optional[str] = Field(None, title="音质", description="可用的音质选项")
+    score: Optional[float] = Field(None, title="匹配度", description="与搜索关键词的匹配度分数")
+
+    class Config:
+        from_attributes = True
+
+
+class SearchResponse(BaseModel):
+    """搜索响应模型"""
+    success: bool = Field(..., title="成功状态", description="搜索是否成功")
+    message: str = Field(..., title="消息", description="搜索结果的消息")
+    results: List[SearchResultItem] = Field([], title="搜索结果", description="搜索结果列表")
+    total: int = Field(0, title="总数", description="搜索结果的总数")
+    page: int = Field(1, title="页码", description="当前页码")
+    size: int = Field(10, title="每页大小", description="每页的结果数量")
+
+
 class SessionStatusResponse(BaseModel):
     success: bool
     sessions: List[DownloadSession] = []

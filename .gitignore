@@ -45,3 +45,5 @@ scripts/test_*.py
 unmatched.json
 backend/tests/enhanced_matching_analysis_output.json
 
+QWEN.md
+discuss/downloader_core_optimization_plan.md

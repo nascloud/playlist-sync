@@ -11,13 +11,14 @@ import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import LogsPage from './pages/LogsPage';
 import DownloadManagementPage from './pages/DownloadManagementPage';
+import SearchDownloadPage from './pages/SearchDownloadPage';
 import LoginPage from './pages/LoginPage';
 import Header from './components/Header';
 import { useState, useEffect } from 'react';
 import { getServers } from './lib/api';
 import { Toaster, toast } from 'sonner';
 
-type Page = 'dashboard' | 'logs' | 'settings' | 'downloads';
+type Page = 'dashboard' | 'logs' | 'settings' | 'downloads' | 'search';
 
 
 const AppContent = () => {
@@ -28,9 +29,14 @@ const AppContent = () => {
 
     useEffect(() => {
         const page = location.pathname.substring(1) as Page;
-        if (['dashboard', 'logs', 'settings', 'downloads'].includes(page)) {
+        console.log('路由调试 - 当前路径:', location.pathname, '提取的页面:', page);
+        console.log('路由调试 - 可用页面列表:', ['dashboard', 'logs', 'settings', 'downloads', 'search']);
+        
+        if (['dashboard', 'logs', 'settings', 'downloads', 'search'].includes(page)) {
+            console.log('路由调试 - 匹配成功，设置页面为:', page);
             setActivePage(page);
         } else {
+            console.log('路由调试 - 匹配失败，默认设置为 dashboard');
             setActivePage('dashboard');
         }
     }, [location]);
@@ -84,6 +90,8 @@ const AppContent = () => {
                 return <LogsPage />;
             case 'downloads':
                 return <DownloadManagementPage />;
+            case 'search':
+                return <SearchDownloadPage />;
             case 'settings':
                 return <SettingsPage onSetupComplete={handleSetupComplete} />;
             default:

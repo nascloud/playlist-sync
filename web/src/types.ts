@@ -64,11 +64,23 @@ export interface DownloadSession {
 }
 
 export interface DownloadQueueItem {
-  id: number;
-  session_id: number;
-  title: string;
-  artist: string;
-  status: 'pending' | 'downloading' | 'success' | 'failed';
-  quality: string;
-  error_message: string | null;
+    id: number;
+    session_id: number;
+    title: string;
+    artist: string;
+    status: 'pending' | 'downloading' | 'success' | 'failed';
+    quality: string;
+    error_message: string | null;
+}
+
+// 搜索结果项类型
+export interface SearchResultItem {
+    song_id: string;
+    title: string;
+    artist: string;
+    album?: string;
+    platform: string;
+    duration?: number;
+    quality?: string;
+    score?: number;
 }

@@ -7,7 +7,7 @@ from core.database import get_db_connection
 from services.settings_service import SettingsService
 from services.download.download_queue_manager import download_queue_manager
 from schemas.download import DownloadQueueItemCreate
-from schemas.download_schemas import DownloadSingleRequest
+from schemas.download_schemas import DownloadSingleRequest, SearchResultItem, SearchResponse
 from services.task_service import TaskService
 from services.download.downloader_core import DownloaderCore, downloader
 
@@ -150,6 +150,115 @@ class DownloadService:
         else:
             logger.info(f"任务 {task_id}: 未满足自动下载条件 (全局: {settings['global_auto_download']}, 任务: {settings['task_auto_download']})。")
             return 0
+
+    async def search_songs(self, keyword: str, platform: Optional[str] = None,
+                          page: int = 1, size: int = 10) -> SearchResponse:
+        """
+        搜索歌曲
+        :param keyword: 搜索关键词
+        :param platform: 可选，指定音乐平台
+        :param page: 页码，默认为1
+        :param size: 每页大小，默认为10
+        :return: 搜索结果
+        """
+        try:
+            # 确保下载器已初始化
+            if not self.downloader:
+                await self.initialize_downloader()
+            
+            if not self.downloader:
+                return SearchResponse(
+                    success=False,
+                    message="下载器未初始化，请检查API Key配置",
+                    results=[],
+                    total=0,
+                    page=page,
+                    size=size
+                )
+            
+            # 获取要搜索的平台列表
+            platforms_to_search = []
+            if platform:
+                # 如果指定了平台，只搜索该平台
+                mapped_platform = self.downloader.platform_service.map_platform_name(platform)
+                platforms_to_search = [mapped_platform]
+            else:
+                # 否则搜索所有平台
+                platforms_to_search = self.downloader.platform_service.get_platforms_to_search()
+            
+            all_results = []
+            
+            # 遍历所有平台进行搜索
+            for plat in platforms_to_search:
+                try:
+                    logger.info(f"在平台 '{plat}' 上搜索关键词: '{keyword}'")
+                    search_results = await self.downloader.downloader.search(keyword, plat, page, size)
+                    
+                    # 处理搜索结果
+                    data = search_results.get('data', {})
+                    songs_list = []
+                    
+                    if isinstance(data, dict):
+                        songs_list = data.get('data', [])
+                        if not songs_list:
+                            songs_list = data.get('list', [])
+                    
+                    # 转换为SearchResultItem格式
+                    for song in songs_list:
+                        result_item = SearchResultItem(
+                            song_id=song.get('id', ''),
+                            title=song.get('name', ''),
+                            artist=song.get('artist', ''),
+                            album=song.get('album'),
+                            platform=plat,
+                            duration=song.get('duration'),
+                            quality=song.get('quality'),
+                            score=None  # 搜索结果中没有匹配度分数
+                        )
+                        all_results.append(result_item)
+                    
+                    logger.info(f"在平台 '{plat}' 上找到 {len(songs_list)} 首歌曲")
+                    
+                except Exception as e:
+                    logger.warning(f"在平台 '{plat}' 上搜索时出错: {e}")
+                    continue
+            
+            # 如果没有结果，返回空结果
+            if not all_results:
+                return SearchResponse(
+                    success=True,
+                    message=f"未找到与 '{keyword}' 相关的歌曲",
+                    results=[],
+                    total=0,
+                    page=page,
+                    size=size
+                )
+            
+            # 计算分页
+            total = len(all_results)
+            start_idx = (page - 1) * size
+            end_idx = start_idx + size
+            paginated_results = all_results[start_idx:end_idx]
+            
+            return SearchResponse(
+                success=True,
+                message=f"成功找到 {total} 首与 '{keyword}' 相关的歌曲",
+                results=paginated_results,
+                total=total,
+                page=page,
+                size=size
+            )
+            
+        except Exception as e:
+            logger.exception(f"搜索歌曲时发生错误:")
+            return SearchResponse(
+                success=False,
+                message=f"搜索失败: {str(e)}",
+                results=[],
+                total=0,
+                page=page,
+                size=size
+            )
 
 # 全局变量，用于存储 DownloadService 的单例
 _download_service_instance: Optional[DownloadService] = None

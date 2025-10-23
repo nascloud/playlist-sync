@@ -4,25 +4,28 @@ import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import LogsPage from './pages/LogsPage';
 import DownloadManagementPage from './pages/DownloadManagementPage';
+import SearchDownloadPage from './pages/SearchDownloadPage';
 import LoginPage from './pages/LoginPage';
 import Header from './components/Header';
 import { useState, useEffect } from 'react';
 import { getServers } from './lib/api';
 import { Toaster, toast } from 'sonner';
-const AppContent = () => {
+
+const Layout = () => {
     const [loading, setLoading] = useState(true);
     const [activePage, setActivePage] = useState('dashboard');
     const location = useLocation();
     const navigate = useNavigate();
+
     useEffect(() => {
         const page = location.pathname.substring(1);
-        if (['dashboard', 'logs', 'settings', 'downloads'].includes(page)) {
+        if (['dashboard', 'logs', 'settings', 'downloads', 'search'].includes(page)) {
             setActivePage(page);
-        }
-        else {
+        } else {
             setActivePage('dashboard');
         }
     }, [location]);
+
     useEffect(() => {
         const checkConfiguration = async () => {
             try {
@@ -49,41 +52,38 @@ const AppContent = () => {
         };
         checkConfiguration();
     }, [navigate]);
+
     // 当用户导航到设置页面时，取消警告
     useEffect(() => {
         if (activePage === 'settings') {
             toast.dismiss('config-warning');
         }
     }, [activePage]);
-    const handleSetupComplete = () => {
-        setActivePage('dashboard');
-        toast.success('设置已保存！');
-    };
-    // ... (其余代码保持不变)
-    const PageContent = () => {
-        switch (activePage) {
-            case 'dashboard':
-                return _jsx(DashboardPage, {});
-            case 'logs':
-                return _jsx(LogsPage, {});
-            case 'downloads':
-                return _jsx(DownloadManagementPage, {});
-            case 'settings':
-                return _jsx(SettingsPage, { onSetupComplete: handleSetupComplete });
-            default:
-                return _jsx(DashboardPage, {});
-        }
-    };
+
     if (loading) {
-        return (_jsx("div", { className: "flex items-center justify-center min-h-screen bg-slate-50", children: _jsx("p", { className: "text-gray-500", children: "\u6B63\u5728\u52A0\u8F7D..." }) }));
+        return (_jsx("div", { className: "flex items-center justify-center min-h-screen bg-slate-50", children: _jsx("p", { className: "text-gray-500", children: "正在加载..." }) }));
     }
-    return (_jsxs("div", { className: "min-h-screen bg-slate-50 text-slate-800", children: [_jsx(Header, { activePage: activePage, setActivePage: setActivePage }), _jsx("main", { className: "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8", children: _jsx(PageContent, {}) })] }));
+
+    return (_jsxs("div", { className: "min-h-screen bg-slate-50 text-slate-800", children: [_jsx(Header, { activePage: activePage, setActivePage: setActivePage }), _jsx("main", { className: "max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8", children: _jsx(Outlet, {}) })] }));
 };
+
 const PrivateRoute = () => {
     const token = localStorage.getItem('token');
     return token ? _jsx(Outlet, {}) : _jsx(Navigate, { to: "/login" });
 };
+
 function App() {
-    return (_jsxs(Router, { children: [_jsx(Toaster, { position: "bottom-right", richColors: true, expand: true }), _jsxs(Routes, { children: [_jsx(Route, { path: "/login", element: _jsx(LoginPage, {}) }), _jsx(Route, { element: _jsx(PrivateRoute, {}), children: _jsx(Route, { path: "/*", element: _jsx(AppContent, {}) }) })] })] }));
+    return (_jsxs(Router, { children: [_jsx(Toaster, { position: "bottom-right", richColors: true, expand: true }), _jsxs(Routes, { children: [_jsx(Route, { path: "/login", element: _jsx(LoginPage, {}) }), _jsx(Route, { element: _jsx(PrivateRoute, {}), children: [
+        _jsx(Route, { element: _jsx(Layout, {}), children: [
+            _jsx(Route, { path: "/dashboard", element: _jsx(DashboardPage, {}) }),
+            _jsx(Route, { path: "/logs", element: _jsx(LogsPage, {}) }),
+            _jsx(Route, { path: "/downloads", element: _jsx(DownloadManagementPage, {}) }),
+            _jsx(Route, { path: "/search", element: _jsx(SearchDownloadPage, {}) }),
+            _jsx(Route, { path: "/settings", element: _jsx(SettingsPage, {}) }),
+            _jsx(Route, { path: "/", element: _jsx(Navigate, { to: "/dashboard" }) }),
+            _jsx(Route, { path: "/*", element: _jsx(Navigate, { to: "/dashboard" }) })
+        ] })
+    ] })] })] }));
 }
+
 export default App;
