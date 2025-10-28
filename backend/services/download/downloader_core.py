@@ -62,7 +62,8 @@ class MusicDownloader:
         except (ValueError, TypeError):
             return f"[{time_val}]"
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=6),
+           retry=tenacity.retry_if_exception_type((httpx.RequestError, httpx.HTTPStatusError, ValueError)))
     async def _request(self, method: str, endpoint: str, params: dict = None, data: dict = None) -> dict:
         """
         一个私有的方法，用于发送 HTTP 请求。
@@ -84,13 +85,45 @@ class MusicDownloader:
             
             json_response = response.json()
             
+            # 添加诊断日志：记录完整的API响应
+            logger.debug(f"API响应详情 - URL: {url}, 参数: {all_params}")
+            logger.debug(f"API响应内容: {json_response}")
+            
             # Check if the API returned an error in the response body
-            if json_response.get('code') != 200:
+            # 添加更灵活的响应格式检查
+            response_code = json_response.get('code')
+            if response_code != 200:
                 error_msg = json_response.get('message', 'API 返回未知错误')
+                
+                # 记录完整的响应文本作为DEBUG级别日志
+                try:
+                    logger.debug(f"完整响应文本 - URL: {url}, 状态码: {response_code}, 响应内容: {response.text}")
+                except Exception:
+                    # 如果无法获取响应文本，记录JSON响应
+                    logger.debug(f"完整响应JSON - URL: {url}, 状态码: {response_code}, 响应内容: {json_response}")
+                
+                # 特别处理404错误 - 这可能是API端点问题，但我们可以继续处理空结果
+                if response_code == 404:
+                    logger.warning(f"API返回404错误，可能是端点或参数问题 - URL: {url}, 参数: {all_params}")
+                    logger.warning(f"404错误消息: {error_msg}")
+                    # 返回空结果而不是抛出异常，允许系统继续运行
+                    return {"code": 404, "message": error_msg, "data": []}
+                
                 # 特别处理"未知异常"错误，记录更多调试信息
-                if json_response.get('code') == 400 and "未知异常" in error_msg:
+                if response_code == 400 and "未知异常" in error_msg:
                     logger.warning(f"API返回400未知异常错误，URL: {url}, 参数: {all_params}")
-                raise APIError(f"API 错误 [{json_response.get('code')}]: {error_msg}", status_code=json_response.get('code'))
+                    logger.warning(f"完整响应内容: {json_response}")
+                
+                # 检查是否是新的响应格式，可能数据在其他字段中
+                if 'data' in json_response and isinstance(json_response['data'], list):
+                    logger.warning(f"API返回非200代码但包含有效数据，尝试继续处理 - 代码: {response_code}")
+                    logger.warning(f"响应数据: {json_response['data']}")
+                    # 不抛出异常，继续处理数据
+                    return json_response
+                
+                logger.error(f"API错误详情 - 代码: {response_code}, 消息: {error_msg}")
+                logger.error(f"完整响应内容: {json_response}")
+                raise APIError(f"API 错误 [{response_code}]: {error_msg}", status_code=response_code)
 
             return json_response
 
@@ -98,6 +131,11 @@ class MusicDownloader:
             # Try to parse the response body even for HTTP errors
             try:
                 error_response = http_err.response.json()
+                logger.error(f"HTTP状态错误详情 - URL: {url}, 参数: {all_params}")
+                logger.error(f"HTTP状态码: {http_err.response.status_code}")
+                logger.error(f"错误响应内容: {error_response}")
+                # 记录完整的响应文本作为DEBUG级别日志
+                logger.debug(f"完整响应文本 - URL: {url}, 状态码: {http_err.response.status_code}, 响应内容: {http_err.response.text}")
                 if 'code' in error_response and 'message' in error_response:
                     error_msg = error_response.get('message', 'API 返回未知错误')
                     # 特别处理"未知异常"错误，记录更多调试信息
@@ -105,27 +143,72 @@ class MusicDownloader:
                         logger.warning(f"API返回400未知异常错误，URL: {url}, 参数: {all_params}")
                     raise APIError(f"API 错误 [{error_response.get('code')}]: {error_msg}", status_code=error_response.get('code'))
             except json.JSONDecodeError:
+                logger.error(f"无法解析JSON响应 - URL: {url}, 状态码: {http_err.response.status_code}")
+                logger.error(f"原始响应内容: {http_err.response.text}")
+                # 记录完整的响应文本作为DEBUG级别日志
+                logger.debug(f"完整响应文本 - URL: {url}, 状态码: {http_err.response.status_code}, 响应内容: {http_err.response.text}")
                 pass  # If we can't parse JSON, fall back to the original error
             
             raise APIError(f"HTTP 错误: {http_err}", status_code=http_err.response.status_code)
         except httpx.RequestError as req_err:
+            logger.error(f"请求错误详情 - URL: {url}, 参数: {all_params}")
+            logger.error(f"请求错误: {req_err}")
             raise APIError(f"请求错误: {req_err}")
         except ValueError as json_err:
-             raise APIError(f"JSON 解析错误: {json_err}")
+            logger.error(f"JSON解析错误详情 - URL: {url}, 参数: {all_params}")
+            logger.error(f"JSON解析错误: {json_err}")
+            raise APIError(f"JSON 解析错误: {json_err}")
 
     async def search_platform(self, platform: str, text: str, page: int = 1, size: int = 10) -> dict:
         """在指定平台搜索歌曲。"""
         endpoint = f"/v2/music/{platform}"
         params = {"word": text, "page": page, "num": size}
-        return await self._request("GET", endpoint, params=params)
+        logger.debug(f"开始搜索 - 平台: {platform}, 关键词: '{text}', 页码: {page}, 大小: {size}")
+        logger.debug(f"请求端点: {endpoint}, 参数: {params}")
+        try:
+            result = await self._request("GET", endpoint, params=params)
+            logger.debug(f"搜索成功 - 平台: {platform}, 结果: {result}")
+            return result
+        except APIError as e:
+            logger.error(f"API错误 - 平台: {platform}, 关键词: '{text}', 错误: {e}")
+            # 如果是API错误，检查是否可以降级处理
+            if e.status_code and e.status_code != 200:
+                logger.warning(f"平台 '{platform}' API返回错误代码 {e.status_code}，可能存在服务问题")
+                # 返回空结果而不是抛出异常，允许继续尝试其他平台
+                return {"code": e.status_code, "message": str(e), "data": []}
+            raise
+        except Exception as e:
+            logger.error(f"搜索失败 - 平台: {platform}, 关键词: '{text}', 错误: {e}")
+            # 对于所有其他异常，也返回空结果而不是抛出异常，确保程序不会崩溃
+            return {"code": 500, "message": f"搜索失败: {str(e)}", "data": []}
 
-    async def get_music_url(self, platform: str, music_id: str, info: bool = False) -> dict:
+    async def get_music_url(self, platform: str, music_id: str, info: bool = False, quality: str = '无损') -> dict:
         """获取歌曲 URL。"""
         endpoint = f"/v2/music/{platform}"
         params = {"id": music_id}
+        
+        # 根据平台添加音质参数
+        if platform == 'tencent':
+            # QQ音乐音质映射：无损=10, 高品=8, 标准=4
+            quality_mapping = {'无损': 10, '高品': 8, '标准': 4}
+            params['quality'] = quality_mapping.get(quality, 10)  # 默认最高音质
+        elif platform == 'netease':
+            # 网易云音乐音质映射：无损=5, 高品=3, 标准=1
+            quality_mapping = {'无损': 5, '高品': 3, '标准': 1}
+            params['quality'] = quality_mapping.get(quality, 5)  # 默认最高音质
+        
         # 新API的点歌模式似乎总会返回详细信息，因此 info 参数可能不再需要
         # 但我们仍然可以保留它，以备将来使用
-        return await self._request("GET", endpoint, params=params)
+        try:
+            return await self._request("GET", endpoint, params=params)
+        except APIError as e:
+            logger.error(f"获取歌曲URL失败 - 平台: {platform}, 音乐ID: {music_id}, 错误: {e}")
+            # 如果是API错误，返回空结果而不是抛出异常
+            return {"code": e.status_code or 500, "message": str(e), "data": {}}
+        except Exception as e:
+            logger.error(f"获取歌曲URL时发生未知错误 - 平台: {platform}, 音乐ID: {music_id}, 错误: {e}")
+            # 对于所有其他异常，也返回空结果而不是抛出异常，确保程序不会崩溃
+            return {"code": 500, "message": f"获取歌曲URL失败: {str(e)}", "data": {}}
 
     async def get_lyrics(self, platform: str, song_id: str, session_logger: logging.Logger) -> Optional[str]:
         """
@@ -169,9 +252,13 @@ class MusicDownloader:
                 
         except APIError as e:
             session_logger.warning(f"获取歌词时发生 API 错误: {e}")
+            # 记录更多调试信息
+            session_logger.debug(f"API错误详情 - 平台: {platform}, 歌曲ID: {song_id}, 错误代码: {e.status_code}, 错误消息: {str(e)}")
             return None
         except Exception as e:
             session_logger.warning(f"获取歌词时发生未知错误: {e}")
+            # 记录更多调试信息
+            session_logger.debug(f"未知错误详情 - 平台: {platform}, 歌曲ID: {song_id}, 错误: {str(e)}")
             return None
 
     async def download_song(self, item: DownloadQueueItem, music_id: str, music_type: str,
@@ -185,7 +272,7 @@ class MusicDownloader:
 
         if not music_info:
             log.info(f"获取歌曲 '{music_id}' (平台: {music_type}) 的信息...")
-            music_info = await self.get_music_url(music_type, music_id, info=True)
+            music_info = await self.get_music_url(music_type, music_id, info=True, quality=preferred_quality)
 
         data = music_info.get('data')
         if not data or not isinstance(data, dict):
@@ -458,8 +545,8 @@ class DownloaderCore:
             session_logger.info(f"步骤 1: 验证提供的歌曲 ID '{song_id}' 和平台 '{platform}' 的信息匹配度")
             try:
                 # 获取API返回的歌曲详细信息
-                # 注意：get_music_url 现在需要平台作为第一个参数
-                music_info = await self.downloader.get_music_url(platform, song_id, info=True)
+                # 注意：get_music_url 现在需要平台作为第一个参数，并传递音质参数
+                music_info = await self.downloader.get_music_url(platform, song_id, info=True, quality=preferred_quality)
                 # 验证API返回信息与请求信息的一致性
                 is_valid, validation_msg = self._validate_api_response(music_info, enriched_item)
                 

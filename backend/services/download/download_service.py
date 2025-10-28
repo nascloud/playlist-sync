@@ -219,7 +219,15 @@ class DownloadService:
                     logger.info(f"在平台 '{plat}' 上找到 {len(songs_list)} 首歌曲")
 
                 except Exception as e:
-                    logger.warning(f"在平台 '{plat}' 上搜索时出错: {e}")
+                    logger.error(f"在平台 '{plat}' 上搜索时出错: {e}")
+                    logger.error(f"搜索参数 - 关键词: '{keyword}', 平台: '{plat}', 页码: {page}, 大小: {size}")
+                    logger.error(f"错误类型: {type(e).__name__}")
+                    logger.error(f"错误详情: {str(e)}")
+                    # 如果是RetryError，记录更多详细信息
+                    if "RetryError" in str(type(e)):
+                        logger.error(f"重试错误详情: {e}")
+                        if hasattr(e, 'last_attempt') and e.last_attempt:
+                            logger.error(f"最后一次尝试的异常: {e.last_attempt.exception()}")
                     continue
             
             # 如果没有结果，返回空结果

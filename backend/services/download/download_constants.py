@@ -2,12 +2,14 @@
 
 # 平台映射配置
 PLATFORM_MAPPING = {
-    "netease": "wy",
-    "qqmusic": "qq",
+    "netease": "netease",
+    "qqmusic": "tencent",
+    "qq": "tencent",
+    "wy": "netease",
 }
 
-# 平台搜索顺序
-PLATFORM_SEARCH_ORDER = ['qq', 'wy', 'kg', 'kw', 'mg']
+# 平台搜索顺序 - 只包含工作的平台
+PLATFORM_SEARCH_ORDER = ['tencent', 'netease']
 
 # 音质优先级排序
 QUALITY_ORDER = ['无损', '高品', '标准']

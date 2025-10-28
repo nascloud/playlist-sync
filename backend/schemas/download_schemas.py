@@ -1,6 +1,7 @@
 
-from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from pydantic import BaseModel, Field, field_validator
+from typing import Optional, Literal, Union
+import re
 
 class DownloadSettingsBase(BaseModel):
     """
@@ -118,6 +119,35 @@ class SearchResultItem(BaseModel):
     duration: Optional[int] = Field(None, title="时长", description="歌曲时长（秒）")
     quality: Optional[str] = Field(None, title="音质", description="可用的音质选项")
     score: Optional[float] = Field(None, title="匹配度", description="与搜索关键词的匹配度分数")
+
+    @field_validator('duration', mode='before')
+    @classmethod
+    def parse_duration(cls, v):
+        """将 'M分S秒' 格式的字符串转换为总秒数的整数"""
+        if v is None:
+            return None
+        
+        # 如果已经是整数，直接返回
+        if isinstance(v, int):
+            return v
+        
+        # 如果是字符串，尝试解析
+        if isinstance(v, str):
+            # 尝试匹配 'M分S秒' 格式
+            match = re.match(r'^(\d+)分(\d+)秒$', v)
+            if match:
+                minutes = int(match.group(1))
+                seconds = int(match.group(2))
+                return minutes * 60 + seconds
+            
+            # 尝试直接转换为整数
+            try:
+                return int(v)
+            except ValueError:
+                pass
+        
+        # 如果无法解析，返回 None
+        return None
 
     class Config:
         from_attributes = True
