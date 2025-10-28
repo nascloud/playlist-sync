@@ -553,5 +553,35 @@ class DownloadDBService:
         else:
             return self._execute_in_thread(_get_task_id, session_id)
 
+    def update_session_download_lyrics(self, session_id: int, download_lyrics: bool, conn: Optional[sqlite3.Connection] = None):
+        """更新会话的歌词下载设置。"""
+        def _update_download_lyrics(conn: sqlite3.Connection, session_id: int, download_lyrics: bool):
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE download_sessions SET download_lyrics = ? WHERE id = ?",
+                (1 if download_lyrics else 0, session_id)
+            )
+            conn.commit()
+        
+        if conn:
+            _update_download_lyrics(conn, session_id, download_lyrics)
+        else:
+            self._execute_in_thread(_update_download_lyrics, session_id, download_lyrics)
+
+    def get_session_download_lyrics(self, session_id: int, conn: Optional[sqlite3.Connection] = None) -> Optional[bool]:
+        """获取会话的歌词下载设置。"""
+        def _get_download_lyrics(conn: sqlite3.Connection, session_id: int) -> Optional[bool]:
+            cursor = conn.cursor()
+            cursor.execute("SELECT download_lyrics FROM download_sessions WHERE id = ?", (session_id,))
+            row = cursor.fetchone()
+            if row and row['download_lyrics'] is not None:
+                return bool(row['download_lyrics'])
+            return None
+        
+        if conn:
+            return _get_download_lyrics(conn, session_id)
+        else:
+            return self._execute_in_thread(_get_download_lyrics, session_id)
+
 # 实例化服务
 download_db_service = DownloadDBService()

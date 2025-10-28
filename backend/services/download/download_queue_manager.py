@@ -26,7 +26,7 @@ class DownloadQueueManager:
         self._is_processing = False
         self._downloader_initialized = False
 
-    async def add_to_queue(self, task_id: int, session_type: str, items: List[DownloadQueueItemCreate], conn: Optional[sqlite3.Connection] = None) -> int:
+    async def add_to_queue(self, task_id: int, session_type: str, items: List[DownloadQueueItemCreate], download_lrc: bool = False, conn: Optional[sqlite3.Connection] = None) -> int:
         """
         将一批下载项添加到队列。如果存在与task_id关联的活跃会话，则将项目添加到该会话；否则，创建新会话。
         """
@@ -59,7 +59,8 @@ class DownloadQueueManager:
                     session_id = download_db_service.create_download_session(
                         task_id, session_type, count, conn=conn
                     )
-                    download_db_service.add_items_to_queue(session_id, items, conn=conn)
+                    # 存储歌词下载设置到会话中
+                    download_db_service.update_session_download_lyrics(session_id, download_lrc, conn=conn)
                     conn.commit()
                     return session_id
             except Exception as e:
@@ -150,7 +151,11 @@ class DownloadQueueManager:
             # 在下载前获取最新的下载设置
             settings = await loop.run_in_executor(None, SettingsService.get_download_settings)
             preferred_quality = settings.preferred_quality if settings else '无损'
-            download_lyrics = settings.download_lyrics if settings else False
+            # 获取会话的歌词下载设置
+            session_download_lyrics = download_db_service.get_session_download_lyrics(session_id)
+            if session_download_lyrics is None:
+                session_download_lyrics = False
+            download_lyrics = session_download_lyrics
             
             session_logger.info(f"使用下载设置: 音质='{preferred_quality}', 下载歌词={download_lyrics}")
 

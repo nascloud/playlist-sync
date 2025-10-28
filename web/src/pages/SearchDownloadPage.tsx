@@ -58,7 +58,7 @@ const SearchDownloadPage: React.FC = () => {
           song_id: item.song_id,
           title: item.title,
           artist: item.artist,
-          album: item.album
+          album: item.album,
         }),
       });
       

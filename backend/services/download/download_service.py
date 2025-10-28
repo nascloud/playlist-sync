@@ -105,6 +105,11 @@ class DownloadService:
             logger.info(f"任务 {task_id}: 请求下载单曲 '{song_info.title}'。")
             effective_task_id = task_id
         
+        # 从全局设置中获取歌词下载配置
+        loop = asyncio.get_running_loop()
+        settings = await loop.run_in_executor(None, self.settings_service.get_download_settings)
+        download_lrc = settings.download_lyrics if settings else False
+        
         item = DownloadQueueItemCreate(
             song_id=song_info.song_id,
             title=song_info.title,
@@ -117,6 +122,7 @@ class DownloadService:
             task_id=effective_task_id,
             session_type='individual',
             items=[item],
+            download_lrc=download_lrc,
             conn=db
         )
         return session_id
