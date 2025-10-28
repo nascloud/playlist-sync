@@ -39,7 +39,6 @@ export type SyncProgress = {
 };
 
 export interface DownloadSettingsData {
-  api_key: string | null;
   download_path: string;
   preferred_quality: string;
   download_lyrics: boolean;

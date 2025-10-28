@@ -111,11 +111,11 @@ const SettingsPage: React.FC<{ onSetupComplete: () => void }> = ({ onSetupComple
     }
   };
 
-  const handleTestDownloadConnection = async (apiKey: string) => {
+  const handleTestDownloadConnection = async () => {
     try {
-      return await fetchFromApi('/download/download-settings/test', {
+      return await fetchFromApi('/download/download-settings/test-api', {
         method: 'POST',
-        body: JSON.stringify({ api_key: apiKey }),
+        body: JSON.stringify({}),
       });
     } catch (error: any) {
       return { success: false, message: error.message || '请求失败，请检查网络连接。' };

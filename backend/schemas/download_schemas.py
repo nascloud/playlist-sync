@@ -1,13 +1,13 @@
 
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional, Literal, Union
+from datetime import datetime
 import re
 
 class DownloadSettingsBase(BaseModel):
     """
     下载设置的基础模型
     """
-    api_key: Optional[str] = Field(None, title="API Key", description="用于访问下载服务的API Key")
     download_path: str = Field(..., title="下载路径", description="音乐文件保存的根路径")
     preferred_quality: str = Field("high", title="首选音质", description="例如：'standard', 'high', 'lossless'")
     download_lyrics: bool = Field(True, title="下载歌词", description="是否同时下载歌词文件")
@@ -27,16 +27,10 @@ class DownloadSettings(DownloadSettingsBase):
     用于从API返回下载设置的模型
     """
     id: Literal[1] = Field(1, title="配置ID", description="固定为1，确保单行配置")
+    last_updated: Optional[datetime] = Field(None, title="最后更新时间")
 
     class Config:
         from_attributes = True
-
-
-class TestConnectionRequest(BaseModel):
-    """
-    测试下载连接请求体
-    """
-    api_key: str = Field(..., title="API Key", description="需要测试的API Key")
 
 
 class TestConnectionResponse(BaseModel):
@@ -74,7 +68,6 @@ class DownloadActionResponse(BaseModel):
     message: str
 
 
-from datetime import datetime
 from typing import Optional, List, Any
 
 class DownloadQueueItem(BaseModel):

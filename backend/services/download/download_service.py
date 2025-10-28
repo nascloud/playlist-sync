@@ -42,7 +42,6 @@ class DownloadService:
             logger.warning("下载服务的下载路径未配置，下载功能将不可用。")
             return
 
-        # 新的 initialize 方法不再需要 api_key
         self.downloader.initialize(download_path=settings.download_path)
         logger.info("下载器初始化成功。")
 
@@ -191,7 +190,7 @@ class DownloadService:
             if not self.downloader:
                 return SearchResponse(
                     success=False,
-                    message="下载器未初始化，请检查API Key配置",
+                    message="下载器未初始化，请检查下载设置配置",
                     results=[],
                     total=0,
                     page=page,

@@ -97,11 +97,11 @@ const SettingsPage = ({ onSetupComplete }) => {
             toast.error(error.message || '保存下载设置失败。');
         }
     };
-    const handleTestDownloadConnection = async (apiKey) => {
+    const handleTestDownloadConnection = async () => {
         try {
-            return await fetchFromApi('/download/download-settings/test', {
+            return await fetchFromApi('/download/download-settings/test-api', {
                 method: 'POST',
-                body: JSON.stringify({ api_key: apiKey }),
+                body: JSON.stringify({}),
             });
         }
         catch (error) {

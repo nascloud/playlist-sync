@@ -9,13 +9,12 @@ interface DownloadSettingsProps {
   // 保存设置后要调用的回调函数
   onSave: (settings: DownloadSettingsData) => Promise<void>;
   // 测试连接的回调函数
-  onTestConnection: (apiKey: string) => Promise<{ success: boolean; message: string }>;
+  onTestConnection: () => Promise<{ success: boolean; message: string }>;
 }
 
 const DownloadSettings: React.FC<DownloadSettingsProps> = ({ settings, onSave, onTestConnection }) => {
   // 使用 useState 来管理表单的本地状态
   const [formData, setFormData] = useState<DownloadSettingsData>({
-    api_key: '',
     download_path: '',
     preferred_quality: 'high',
     download_lyrics: true,
@@ -60,33 +59,20 @@ const DownloadSettings: React.FC<DownloadSettingsProps> = ({ settings, onSave, o
 
   // 处理测试连接按钮点击
   const handleTestConnection = async () => {
-    if (!formData.api_key) {
-      setTestResult({ success: false, message: '请输入API Key后再测试' });
-      return;
-    }
     setIsTesting(true);
-    const result = await onTestConnection(formData.api_key);
+    const result = await onTestConnection();
     setTestResult(result);
     setIsTesting(false);
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {/* API Key 输入 */}
-      <div className="api-key-section">
-        <label htmlFor="api_key">API Key</label>
+      {/* API 连接测试 */}
+      <div className="api-connection-section">
+        <label>API 连接测试</label>
         <div className="flex items-center space-x-2">
-          <input
-            id="api_key"
-            name="api_key"
-            type="password"
-            value={formData.api_key || ''}
-            onChange={handleChange}
-            placeholder="输入您的下载API Key"
-            className="flex-grow"
-          />
           <button type="button" onClick={handleTestConnection} disabled={isTesting}>
-            {isTesting ? '测试中...' : '测试连接'}
+            {isTesting ? '测试中...' : '测试API连接'}
           </button>
         </div>
         {testResult && (

@@ -8,7 +8,6 @@ import logging
 from schemas.download_schemas import (
     DownloadSettings,
     DownloadSettingsCreate,
-    TestConnectionRequest,
     TestConnectionResponse,
     DownloadAllRequest,
     DownloadSingleRequest,
@@ -65,7 +64,6 @@ async def get_download_settings() -> Any:
     if not settings:
         # 如果数据库中没有设置，返回环境变量中的默认值
         return DownloadSettings(
-            api_key=app_settings.DOWNLOADER_API_KEY or "",
             download_path=app_settings.DOWNLOAD_PATH or "",
             last_updated=datetime.now()
         )
@@ -88,27 +86,32 @@ async def save_download_settings(settings_in: DownloadSettingsCreate) -> Any:
     
     return saved_settings
 
-@router.post("/download-settings/test", response_model=TestConnectionResponse)
-async def test_download_connection(request: TestConnectionRequest) -> Any:
-    """测试与下载源的连接。"""
+@router.post("/download-settings/test-api", response_model=TestConnectionResponse)
+async def test_api_connection() -> Any:
+    """测试与下载API的连接。"""
     try:
         loop = asyncio.get_running_loop()
         settings = await loop.run_in_executor(None, SettingsService.get_download_settings)
 
-        if not settings:
-             raise HTTPException(status_code=404, detail="请先保存下载设置")
+        if not settings or not settings.download_path:
+            raise HTTPException(status_code=404, detail="请先保存下载设置，特别是下载路径")
         
-        # 使用传入的API Key进行测试，并使用已保存的路径
+        # 初始化下载器以测试API连接
         await loop.run_in_executor(
             None,
             downloader.initialize,
-            request.api_key,
             settings.download_path
         )
-        # 可以在 downloader.initialize 中加入一个实际的连接测试，如查询 key info
-        return TestConnectionResponse(success=True, message="连接成功！")
+        
+        # 执行一个简单的搜索测试来验证API连接
+        test_result = await downloader.downloader.search_platform('tencent', 'test', 1, 1)
+        
+        if test_result and test_result.get('code') == 200:
+            return TestConnectionResponse(success=True, message="API连接成功！")
+        else:
+            return TestConnectionResponse(success=False, message="API连接测试失败")
     except Exception as e:
-        return TestConnectionResponse(success=False, message=f"连接失败: {str(e)}")
+        return TestConnectionResponse(success=False, message=f"API连接失败: {str(e)}")
 
 @router.post("/all-missing", response_model=DownloadActionResponse)
 async def download_all_missing(request: DownloadAllRequest, download_service: DownloadService = Depends(get_download_service)) -> Any:

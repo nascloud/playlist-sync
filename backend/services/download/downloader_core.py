@@ -370,7 +370,7 @@ class DownloaderCore:
         self.quality_checker = QualityChecker()
 
     def initialize(self, download_path: str):
-        """初始化下载器，配置API Key和下载路径。"""
+        """初始化下载器，配置下载路径。"""
         logger.info("开始初始化下载器核心 (DownloaderCore)...")
         self.downloader = MusicDownloader()
         self.download_path = download_path
@@ -532,7 +532,7 @@ class DownloaderCore:
 
         session_logger.info(f"开始处理下载任务 for: {item.title} - {item.artist}")
         if not self.downloader:
-            raise ValueError("下载器未初始化或 API Key 无效。")
+            raise ValueError("下载器未初始化。")
 
         # 补全缺失的歌曲信息
         enriched_item = await self._enrich_track_info(item, session_logger)
