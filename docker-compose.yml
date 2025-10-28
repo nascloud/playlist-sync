@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # 后端 API 服务
   playlist_sync-app:
     build:
       context: .

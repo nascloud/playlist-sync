@@ -127,6 +127,53 @@ class MusicDownloader:
         # 但我们仍然可以保留它，以备将来使用
         return await self._request("GET", endpoint, params=params)
 
+    async def get_lyrics(self, platform: str, song_id: str, session_logger: logging.Logger) -> Optional[str]:
+        """
+        获取歌曲歌词
+        :param platform: 平台，如 'qq' 或 'netease'
+        :param song_id: 歌曲ID
+        :param session_logger: 日志记录器
+        :return: 歌词内容，如果失败则返回 None
+        """
+        try:
+            # 根据平台构造相应的歌词 API 请求 URL
+            if platform == 'qq':
+                endpoint = "/v2/music/tencent/lyric"
+                params = {"mid": song_id}
+            elif platform == 'netease':
+                endpoint = "/v2/music/netease/lyric"
+                params = {"id": song_id}
+            else:
+                session_logger.warning(f"不支持的平台: {platform}，无法获取歌词")
+                return None
+            
+            session_logger.info(f"正在获取 {platform} 平台歌曲 ID {song_id} 的歌词...")
+            
+            # 调用现有的 _request() 方法发送 GET 请求
+            response = await self._request("GET", endpoint, params=params)
+            
+            # 处理 API 的响应
+            if response.get('code') == 200 and 'data' in response:
+                data = response.get('data', {})
+                lrc_content = data.get('lrc')
+                
+                if lrc_content:
+                    session_logger.info("歌词获取成功")
+                    return lrc_content
+                else:
+                    session_logger.warning("API 响应中未找到歌词内容")
+                    return None
+            else:
+                session_logger.warning(f"获取歌词失败，API 返回错误: {response.get('message', '未知错误')}")
+                return None
+                
+        except APIError as e:
+            session_logger.warning(f"获取歌词时发生 API 错误: {e}")
+            return None
+        except Exception as e:
+            session_logger.warning(f"获取歌词时发生未知错误: {e}")
+            return None
+
     async def download_song(self, item: DownloadQueueItem, music_id: str, music_type: str,
                            download_dir: str, preferred_quality: str = '无损',
                            download_lyrics: bool = False, session_logger: Optional[logging.Logger] = None,
@@ -201,11 +248,25 @@ class MusicDownloader:
         metadata_handler.embed_metadata(str(song_filepath), item, song_info_details, log)
 
         if download_lyrics:
-            # 检查新API是否提供歌词，以及格式是什么
-            # 假设新API不直接提供歌词数据，或者格式未知，暂时禁用
-            # lyrics_data = data.get('lyric')
-            # if lyrics_data...
-            log.info("信息: 新API暂不支持歌词下载。")
+            log.info("正在下载歌词...")
+            
+            # 调用 get_lyrics 方法获取歌词数据
+            lrc_content = await self.get_lyrics(music_type, music_id, log)
+            
+            # 检查是否获取到歌词
+            if lrc_content and lrc_content.strip():
+                # 创建与歌曲文件同名但扩展名为 .lrc 的文件路径
+                lyrics_filepath = song_filepath.with_suffix('.lrc')
+                
+                try:
+                    # 将获取到的歌词内容以 UTF-8 编码写入文件
+                    with open(lyrics_filepath, 'w', encoding='utf-8') as f:
+                        f.write(lrc_content)
+                    log.info(f"歌词下载成功并保存至 {lyrics_filepath}")
+                except IOError as e:
+                    log.warning(f"保存歌词文件时出错: {e}")
+            else:
+                log.info("未找到可用歌词")
 
         return str(song_filepath)
 
