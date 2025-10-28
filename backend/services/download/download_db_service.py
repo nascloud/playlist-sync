@@ -479,15 +479,20 @@ class DownloadDBService:
         def _get_status(conn: sqlite3.Connection) -> dict:
             cursor = conn.cursor()
             
-            # 1. 获取所有会话，并关联任务名称。使用 COALESCE 提供默认值以防止 NULL 导致校验失败。
+            # 1. 获取所有会话，并关联任务名称。使用 CASE WHEN 处理搜索下载任务的特殊情况。
             query = """
-                SELECT 
-                    s.id, s.task_id, COALESCE(t.name, '未知任务') as task_name, s.session_type, s.total_songs, 
-                    COALESCE(s.success_count, 0) as success_count, 
-                    COALESCE(s.failed_count, 0) as failed_count, 
-                    s.status, 
-                    strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(s.created_at, '1970-01-01T00:00:00Z')) as created_at, 
-                    strftime('%Y-%m-%dT%H:%M:%SZ', s.completed_at) as completed_at 
+                SELECT
+                    s.id, s.task_id,
+                    CASE
+                        WHEN s.task_id = 0 THEN '搜索下载'
+                        ELSE COALESCE(t.name, '未知任务')
+                    END as task_name,
+                    s.session_type, s.total_songs,
+                    COALESCE(s.success_count, 0) as success_count,
+                    COALESCE(s.failed_count, 0) as failed_count,
+                    s.status,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(s.created_at, '1970-01-01T00:00:00Z')) as created_at,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', s.completed_at) as completed_at
                 FROM download_sessions s
                 LEFT JOIN tasks t ON s.task_id = t.id
                 ORDER BY s.created_at DESC

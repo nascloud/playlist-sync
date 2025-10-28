@@ -17,6 +17,12 @@ class DownloadService:
     """
     核心服务，用于管理下载任务的创建、执行和监控。
     """
+    # 表示"搜索下载"的虚拟任务对象
+    SEARCH_DOWNLOAD_TASK = {
+        'id': 0,
+        'name': '搜索下载'
+    }
+    
     def __init__(self, settings_service: SettingsService):
         self.downloader: Optional[DownloaderCore] = None
         self.queue_manager = download_queue_manager
@@ -83,23 +89,32 @@ class DownloadService:
         """
         下载单个指定的歌曲。
         """
-        # 验证 task_id 是否存在
-        task = self.task_service.get_task_by_id(task_id)
-        if not task:
-            raise ValueError(f"任务ID {task_id} 不存在。")
-            
-        logger.info(f"任务 {task_id}: 请求下载单曲 '{song_info.title}'。")
+        # 处理 task_id 为 0 或 None 的情况，将其视为"搜索下载"任务
+        if task_id == 0 or task_id is None:
+            # 对于搜索下载，使用默认平台
+            platform = 'qq'  # 默认使用 qq 平台
+            logger.info(f"搜索下载任务: 下载单曲 '{song_info.title}'。")
+            # 使用搜索下载任务的ID
+            effective_task_id = self.SEARCH_DOWNLOAD_TASK['id']
+        else:
+            # 验证 task_id 是否存在
+            task = self.task_service.get_task_by_id(task_id)
+            if not task:
+                raise ValueError(f"任务ID {task_id} 不存在。")
+            platform = task.platform
+            logger.info(f"任务 {task_id}: 请求下载单曲 '{song_info.title}'。")
+            effective_task_id = task_id
         
         item = DownloadQueueItemCreate(
             song_id=song_info.song_id,
             title=song_info.title,
             artist=song_info.artist,
             album=song_info.album,
-            platform=task.platform
+            platform=platform
         )
 
         session_id = await self.queue_manager.add_to_queue(
-            task_id=task_id,
+            task_id=effective_task_id,
             session_type='individual',
             items=[item],
             conn=db

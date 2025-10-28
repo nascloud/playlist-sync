@@ -91,7 +91,6 @@ class DownloadQueueManager:
                 await loop.run_in_executor(
                     None,
                     downloader_core.initialize,
-                    settings.api_key,
                     settings.download_path
                 )
                 self._downloader_initialized = True

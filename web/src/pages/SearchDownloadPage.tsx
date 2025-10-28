@@ -50,17 +50,15 @@ const SearchDownloadPage: React.FC = () => {
   const handleDownload = async (item: SearchResultItem) => {
     setDownloading(prev => ({ ...prev, [item.song_id]: true }));
     try {
-      // 这里需要一个任务ID来下载，但在搜索页面我们没有特定的任务
-      // 我们可以创建一个特殊的任务或者直接下载
+      // 使用现有的单曲下载接口，task_id设为0表示搜索下载
       const data = await fetchFromApi('/download/single', {
         method: 'POST',
         body: JSON.stringify({
-          task_id: 0, // 特殊任务ID表示直接下载
+          task_id: 0, // 特殊ID表示搜索下载任务
           song_id: item.song_id,
           title: item.title,
           artist: item.artist,
-          album: item.album,
-          platform: item.platform
+          album: item.album
         }),
       });
       
