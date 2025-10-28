@@ -30,11 +30,8 @@ class MusicDownloader:
     """
     一个用于与 AIAPI.VIP 交互的音乐下载器核心。
     """
-    def __init__(self, api_key: str):
-        if not api_key:
-            raise ValueError("API key 不能为空")
-        self.api_key = api_key
-        self.base_url = "https://aiapi.vip/v1"
+    def __init__(self):
+        self.base_url = "https://api.vkeys.cn"
         # 使用 httpx.AsyncClient 替代 requests，配置允许重定向
         self.http_client = httpx.AsyncClient(
             timeout=30.0,
@@ -71,7 +68,7 @@ class MusicDownloader:
         一个私有的方法，用于发送 HTTP 请求。
         """
         url = f"{self.base_url}{endpoint}"
-        all_params = {"key": self.api_key}
+        all_params = {}
         if params:
             all_params.update(params)
 
@@ -116,61 +113,51 @@ class MusicDownloader:
         except ValueError as json_err:
              raise APIError(f"JSON 解析错误: {json_err}")
 
-    async def search(self, text: str, music_type: str, page: int = 1, size: int = 10) -> dict:
-        """搜索歌曲。"""
-        params = {"text": text, "type": music_type, "page": page, "size": size}
-        return await self._request("GET", "/search", params=params)
+    async def search_platform(self, platform: str, text: str, page: int = 1, size: int = 10) -> dict:
+        """在指定平台搜索歌曲。"""
+        endpoint = f"/v2/music/{platform}"
+        params = {"word": text, "page": page, "num": size}
+        return await self._request("GET", endpoint, params=params)
 
-    async def get_music_url(self, music_id: str, music_type: str, info: bool = False) -> dict:
+    async def get_music_url(self, platform: str, music_id: str, info: bool = False) -> dict:
         """获取歌曲 URL。"""
-        params = {"id": music_id, "type": music_type, "info": info}
-        return await self._request("GET", "/musicUrl", params=params)
+        endpoint = f"/v2/music/{platform}"
+        params = {"id": music_id}
+        # 新API的点歌模式似乎总会返回详细信息，因此 info 参数可能不再需要
+        # 但我们仍然可以保留它，以备将来使用
+        return await self._request("GET", endpoint, params=params)
 
-    async def download_song(self, item: DownloadQueueItem, music_id: str, music_type: str, 
-                           download_dir: str, preferred_quality: str = '无损', 
-                           download_lyrics: bool = False, session_logger: Optional[logging.Logger] = None) -> str:
+    async def download_song(self, item: DownloadQueueItem, music_id: str, music_type: str,
+                           download_dir: str, preferred_quality: str = '无损',
+                           download_lyrics: bool = False, session_logger: Optional[logging.Logger] = None,
+                           music_info: Optional[Dict[str, Any]] = None) -> str:
         """
         下载歌曲，并可选择下载歌词和音质。返回下载的文件路径。
         """
         log = session_logger or logging.getLogger(__name__)
 
-        log.info(f"获取歌曲 '{music_id}' (平台: {music_type}) 的信息...")
-        music_info = await self.get_music_url(music_id, music_type, info=True)
-        
+        if not music_info:
+            log.info(f"获取歌曲 '{music_id}' (平台: {music_type}) 的信息...")
+            music_info = await self.get_music_url(music_type, music_id, info=True)
+
         data = music_info.get('data')
-        if not data or not isinstance(data, list):
+        if not data or not isinstance(data, dict):
             raise APIError("API未返回有效的歌曲数据。")
 
-        sorted_tracks = sorted(data, key=lambda x: x.get('br', 0), reverse=True)
+        # 从新API响应中提取信息
+        song_url = data.get('url')
+        if not song_url:
+            raise APIError("未找到可用的下载链接。")
 
-        selected_track = None
-        try:
-            start_index = QUALITY_ORDER.index(preferred_quality)
-        except ValueError:
-            start_index = 0
+        # 尝试从API响应中获取文件格式，如果没有，则根据URL推断
+        file_format_match = re.search(r'\.(\w+)$', song_url.split('?')[0])
+        file_format = file_format_match.group(1) if file_format_match else 'mp3'
 
-        for i in range(start_index, len(QUALITY_ORDER)):
-            quality = QUALITY_ORDER[i]
-            for track in sorted_tracks:
-                if track.get('ts') == quality and track.get('url'):
-                    selected_track = track
-                    break
-            if selected_track:
-                break
+        actual_quality = data.get('quality', '未知')
 
-        if not selected_track:
-            if sorted_tracks and sorted_tracks[0].get('url'):
-                selected_track = sorted_tracks[0]
-            else:
-                raise APIError("未找到可用的下载链接。")
+        song_name = data.get('song', item.title)
+        singer = data.get('singer', item.artist)
 
-        song_url = selected_track.get('url')
-        file_format = selected_track.get('format', 'mp3')
-        actual_quality = selected_track.get('ts', '未知')
-
-        song_info_details = music_info.get('info', {})
-        song_name = music_info.get('gm') or song_info_details.get('name', item.title)
-        singer = music_info.get('gs') or song_info_details.get('artist', item.artist)
         clean_singer = re.sub(r'[\\/*?:"<>|]', "", singer)
         clean_name = re.sub(r'[\\/*?:"<>|]', "", song_name)
         file_basename = f"{clean_singer} - {clean_name}"
@@ -180,14 +167,13 @@ class MusicDownloader:
 
         song_filepath = download_path / f"{file_basename}.{file_format}"
         log.info(f"选择音质: {actual_quality}。正在下载到: {song_filepath}")
-        
+
         try:
             # 使用GET请求下载文件，httpx会自动处理重定向
             async with self.http_client.stream("GET", song_url, timeout=180.0) as response:
-                # 如果响应是重定向，记录日志但让httpx自动处理
                 if response.status_code in (301, 302, 303, 307, 308):
                     log.info(f"收到重定向响应 {response.status_code}，httpx将自动跟随重定向...")
-                
+
                 response.raise_for_status()
                 with open(song_filepath, 'wb') as f:
                     async for chunk in response.aiter_bytes(chunk_size=8192):
@@ -201,7 +187,6 @@ class MusicDownloader:
         # 下载完成后，先进行低质量文件检测
         quality_checker = QualityChecker()
         if not quality_checker.is_file_acceptable(str(song_filepath), log):
-            # 如果文件质量不合格，删除文件并抛出异常
             try:
                 os.remove(str(song_filepath))
                 log.info(f"已删除低质量文件: {song_filepath}")
@@ -210,26 +195,18 @@ class MusicDownloader:
             raise APIError(f"下载的文件 '{song_filepath}' 被标记为低质量或广告。")
 
         # 文件质量合格，继续嵌入 ID3 标签
+        # 注意：我们需要确保 song_info_details 仍然可用或调整它
+        song_info_details = data  # 使用整个 data 字典作为 song_info_details
         metadata_handler = MetadataHandler()
         metadata_handler.embed_metadata(str(song_filepath), item, song_info_details, log)
 
         if download_lyrics:
-            lyrics_data = song_info_details.get('lyric')
-            if lyrics_data and isinstance(lyrics_data, list):
-                lyric_filepath = download_path / f"{file_basename}.lrc"
-                log.info(f"正在下载歌词到: {lyric_filepath}")
-                try:
-                    with open(lyric_filepath, 'w', encoding='utf-8') as f:
-                        for line in lyrics_data:
-                            if isinstance(line, dict) and 'time' in line and 'words' in line:
-                                cleaned_words = line['words'].replace('\n', ' ').replace('\r', '')
-                                f.write(f"{self._format_lrc_time(line['time'])} {cleaned_words}\n")
-                    log.info("歌词下载完成。")
-                except (IOError, KeyError) as e:
-                    log.warning(f"警告: 保存歌词文件时出错: {e}")
-            else:
-                log.info("信息: API未提供该歌曲的歌词。")
-        
+            # 检查新API是否提供歌词，以及格式是什么
+            # 假设新API不直接提供歌词数据，或者格式未知，暂时禁用
+            # lyrics_data = data.get('lyric')
+            # if lyrics_data...
+            log.info("信息: 新API暂不支持歌词下载。")
+
         return str(song_filepath)
 
 class DownloaderCore:
@@ -244,12 +221,10 @@ class DownloaderCore:
         self.qq_music_service = QQMusicService()
         self.quality_checker = QualityChecker()
 
-    def initialize(self, api_key: str, download_path: str):
+    def initialize(self, download_path: str):
         """初始化下载器，配置API Key和下载路径。"""
         logger.info("开始初始化下载器核心 (DownloaderCore)...")
-        if not api_key:
-            raise ValueError("API Key 不能为空")
-        self.downloader = MusicDownloader(api_key=api_key)
+        self.downloader = MusicDownloader()
         self.download_path = download_path
         Path(self.download_path).mkdir(parents=True, exist_ok=True)
         logger.info(f"下载器核心 (DownloaderCore) 初始化成功。下载路径: {self.download_path}")
@@ -326,22 +301,23 @@ class DownloaderCore:
         for platform in platforms_to_search:
             try:
                 session_logger.info(f"正在平台 '{platform}' 上搜索 '{search_term}'...")
-                search_results = await self.downloader.search(search_term, platform, 1, 10)
-                songs_data = search_results.get('data', {})
-                songs_list: List[Dict[str, Any]] = []
-                if isinstance(songs_data, dict):
-                    songs_list = songs_data.get('data', [])
+                search_results = await self.downloader.search_platform(platform, search_term, 1, 10)
 
-                if not songs_list and isinstance(songs_data, dict):
-                    # 兼容可能存在的 'list' 字段
-                    songs_list = songs_data.get('list', [])
+                # 新API直接在 'data' 键下返回列表
+                songs_list = search_results.get('data', [])
+                if not isinstance(songs_list, list):
+                    session_logger.warning(f"平台 '{platform}' 的API响应格式不符合预期（'data' 不是列表）。")
+                    songs_list = []
 
-                if songs_list and isinstance(songs_list, list):
+                if songs_list:
+                    # 这里的 filter_and_score_candidates 可能需要根据新API的字段进行调整
+                    # 我们假设它能处理 'song', 'singer', 'album' 等通用字段
+                    # 并且能从候选对象中提取 'id' 或 'mid' 作为 song_id
                     candidates = self.platform_service.filter_and_score_candidates(item, songs_list, platform)
-                    
+
                     # Filter candidates with score > 70 for this platform
                     high_score_candidates = [c for c in candidates if c['score'] > 70]
-                    
+
                     # 如果当前平台找到了高匹配度的候选结果，则返回这些结果
                     if high_score_candidates:
                         session_logger.info(f"在平台 '{platform}' 上找到 {len(high_score_candidates)} 个高匹配度候选结果。")
@@ -367,28 +343,33 @@ class DownloaderCore:
         :return: (是否通过验证, 验证信息)
         """
         try:
+            # 新API的点歌模式响应，信息在 'data' 字段中
+            api_data = music_info.get('data', {})
+            if not api_data:
+                return False, "API未返回有效的歌曲数据"
+
             # 从API响应中提取歌曲信息
-            api_title = music_info.get('gm') or music_info.get('info', {}).get('name', '')
-            api_artist = music_info.get('gs') or music_info.get('info', {}).get('artist', '')
-            
+            api_title = api_data.get('song', '')
+            api_artist = api_data.get('singer', '')
+
             # 如果API没有返回有效信息，认为验证失败
             if not api_title or not api_artist:
                 return False, "API未返回有效的歌曲标题或艺术家信息"
-            
+
             # 使用模糊匹配计算相似度
             requested_title = item.title or ''
             requested_artist = item.artist or ''
-            
+
             title_score = fuzz.ratio(requested_title.lower(), api_title.lower())
             artist_score = fuzz.ratio(requested_artist.lower(), api_artist.lower())
-            
+
             # 记录详细信息用于调试
             validation_details = f"请求:'{requested_title} by {requested_artist}', 实际:'{api_title} by {api_artist}', 标题匹配度:{title_score}, 艺术家匹配度:{artist_score}"
-            
+
             # 设定阈值，如果匹配度低于阈值则认为不一致
             if title_score < API_VALIDATION_TITLE_THRESHOLD or artist_score < API_VALIDATION_ARTIST_THRESHOLD:
                 return False, f"信息匹配度不足 - {validation_details}"
-            
+
             return True, f"信息匹配度良好 - {validation_details}"
         except Exception as e:
             return False, f"验证过程中发生错误: {str(e)}"
@@ -416,7 +397,8 @@ class DownloaderCore:
             session_logger.info(f"步骤 1: 验证提供的歌曲 ID '{song_id}' 和平台 '{platform}' 的信息匹配度")
             try:
                 # 获取API返回的歌曲详细信息
-                music_info = await self.downloader.get_music_url(song_id, platform, info=True)
+                # 注意：get_music_url 现在需要平台作为第一个参数
+                music_info = await self.downloader.get_music_url(platform, song_id, info=True)
                 # 验证API返回信息与请求信息的一致性
                 is_valid, validation_msg = self._validate_api_response(music_info, enriched_item)
                 
@@ -424,13 +406,14 @@ class DownloaderCore:
                     session_logger.info(f"API响应验证通过: {validation_msg}")
                     # 信息匹配，使用直接下载
                     file_path = await self.downloader.download_song(
-                        enriched_item,  # 传递补全信息后的 item
+                        enriched_item,
                         song_id,
                         platform,
                         self.download_path,
                         preferred_quality,
                         download_lyrics,
-                        session_logger
+                        session_logger,
+                        music_info=music_info  # 传递已获取的 music_info
                     )
                     session_logger.info(f"步骤 1 完成. 直接下载成功。文件路径: {file_path}")
                     return file_path

@@ -28,15 +28,16 @@ class DownloadService:
         根据系统设置初始化或重新初始化下载器。
         """
         self.downloader = downloader
-        
+
         loop = asyncio.get_running_loop()
         settings = await loop.run_in_executor(None, self.settings_service.get_download_settings)
-        
-        if not settings or not settings.api_key:
-            logger.warning("下载服务的 API Key 未配置，下载功能将不可用。")
+
+        if not settings or not settings.download_path:
+            logger.warning("下载服务的下载路径未配置，下载功能将不可用。")
             return
 
-        self.downloader.initialize(api_key=settings.api_key, download_path=settings.download_path)
+        # 新的 initialize 方法不再需要 api_key
+        self.downloader.initialize(download_path=settings.download_path)
         logger.info("下载器初始化成功。")
 
     async def download_all_missing(self, task_id: int, db=None) -> int:
@@ -192,33 +193,31 @@ class DownloadService:
             for plat in platforms_to_search:
                 try:
                     logger.info(f"在平台 '{plat}' 上搜索关键词: '{keyword}'")
-                    search_results = await self.downloader.downloader.search(keyword, plat, page, size)
-                    
-                    # 处理搜索结果
-                    data = search_results.get('data', {})
-                    songs_list = []
-                    
-                    if isinstance(data, dict):
-                        songs_list = data.get('data', [])
-                        if not songs_list:
-                            songs_list = data.get('list', [])
-                    
+                    # 调用更新后的 search_platform 方法
+                    search_results = await self.downloader.downloader.search_platform(plat, keyword, page, size)
+
+                    # 新API直接在 'data' 键下返回列表
+                    songs_list = search_results.get('data', [])
+                    if not isinstance(songs_list, list):
+                        logger.warning(f"平台 '{plat}' 的API响应格式不符合预期（'data' 不是列表）。")
+                        songs_list = []
+
                     # 转换为SearchResultItem格式
                     for song in songs_list:
                         result_item = SearchResultItem(
-                            song_id=song.get('id', ''),
-                            title=song.get('name', ''),
-                            artist=song.get('artist', ''),
+                            song_id=str(song.get('id') or song.get('mid', '')),
+                            title=song.get('song', ''),
+                            artist=song.get('singer', ''),
                             album=song.get('album'),
                             platform=plat,
-                            duration=song.get('duration'),
+                            duration=song.get('interval'), # 'time' in docs, but 'interval' in example
                             quality=song.get('quality'),
-                            score=None  # 搜索结果中没有匹配度分数
+                            score=None
                         )
                         all_results.append(result_item)
-                    
+
                     logger.info(f"在平台 '{plat}' 上找到 {len(songs_list)} 首歌曲")
-                    
+
                 except Exception as e:
                     logger.warning(f"在平台 '{plat}' 上搜索时出错: {e}")
                     continue

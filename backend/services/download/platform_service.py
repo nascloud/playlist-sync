@@ -31,22 +31,27 @@ class PlatformService:
         """过滤并评分候选歌曲"""
         candidates: List[Dict[str, Any]] = []
         for result in songs_list:
-            # API返回的字段是name和artist
-            title_match = fuzz.ratio(item.title, result.get('name', ''))
-            artist_match = fuzz.ratio(item.artist, result.get('artist', ''))
-            
+            # 新API返回的字段是'song'和'singer'
+            title_match = fuzz.ratio(item.title, result.get('song', ''))
+            artist_match = fuzz.ratio(item.artist, result.get('singer', ''))
+
             score = (title_match * 0.6) + (artist_match * 0.4)
-            
-            candidate = {
-                "song_id": result.get('id'),
-                "platform": platform,  # 使用传入的平台参数
-                "score": score,
-                "name": result.get('name'),
-                "artist": result.get('artist')
-            }
-            candidates.append(candidate)
-        
-        return candidates
+
+            # song_id 可能是 'id' 或 'mid'
+            song_id = result.get('id') or result.get('mid')
+
+            if song_id:
+                candidate = {
+                    "song_id": str(song_id),  # 确保 song_id 是字符串
+                    "platform": platform,
+                    "score": score,
+                    "name": result.get('song'),
+                    "artist": result.get('singer')
+                }
+                candidates.append(candidate)
+
+        # 按分数降序排序
+        return sorted(candidates, key=lambda x: x['score'], reverse=True)
     
     def get_platforms_to_search(self, preferred_platform: Optional[str] = None, 
                                exclude_platforms: Optional[List[str]] = None) -> List[str]:

@@ -128,6 +128,7 @@ class TestPlexService(unittest.TestCase):
         # 验证 recentlyAddedTracks 方法被正确调用
         mock_library.recentlyAddedTracks.assert_called_once_with(maxresults=custom_max_results)
         
+    @unittest.skip("Skipping test for removed method _calculate_combined_score")
     def test_calculate_combined_score(self):
         """测试 _calculate_combined_score 方法"""
         # 测试权重计算

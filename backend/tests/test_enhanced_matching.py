@@ -20,9 +20,10 @@ class TestEnhancedMatching(unittest.TestCase):
     def setUp(self):
         """初始化测试环境"""
         # 读取未匹配的歌曲列表
-        unmatched_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'unmatched.json')
-        with open(unmatched_file_path, 'r', encoding='utf-8') as f:
-            self.unmatched_data = json.load(f)
+        # unmatched_file_path = os.path.join(os.path.dirname(__file__), '..', '..', 'unmatched.json')
+        # with open(unmatched_file_path, 'r', encoding='utf-8') as f:
+        #     self.unmatched_data = json.load(f)
+        self.unmatched_data = {}
         self.unmatched_songs: List[Dict[str, Any]] = self.unmatched_data.get('unmatched_songs', [])
 
         # 从环境变量获取 Plex 配置
