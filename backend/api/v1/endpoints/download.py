@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Any, Optional
 from datetime import datetime
 import logging
+import httpx
 
 from schemas.download_schemas import (
     DownloadSettings,
@@ -90,26 +91,21 @@ async def save_download_settings(settings_in: DownloadSettingsCreate) -> Any:
 async def test_api_connection() -> Any:
     """测试与下载API的连接。"""
     try:
-        loop = asyncio.get_running_loop()
-        settings = await loop.run_in_executor(None, SettingsService.get_download_settings)
-
-        if not settings or not settings.download_path:
-            raise HTTPException(status_code=404, detail="请先保存下载设置，特别是下载路径")
+        import httpx
         
-        # 初始化下载器以测试API连接
-        await loop.run_in_executor(
-            None,
-            downloader.initialize,
-            settings.download_path
-        )
-        
-        # 执行一个简单的搜索测试来验证API连接
-        test_result = await downloader.downloader.search_platform('tencent', 'test', 1, 1)
-        
-        if test_result and test_result.get('code') == 200:
-            return TestConnectionResponse(success=True, message="API连接成功！")
-        else:
-            return TestConnectionResponse(success=False, message="API连接测试失败")
+        # 测试新的API连接
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://api.vkeys.cn/", timeout=10.0)
+            if response.status_code == 200:
+                response_data = response.json()
+                if response_data.get("code") == 0:
+                    return TestConnectionResponse(success=True, message="API连接成功！" + response_data.get("message", ""))
+                else:
+                    return TestConnectionResponse(success=False, message="API连接失败: " + response_data.get("message", "未知错误"))
+            else:
+                return TestConnectionResponse(success=False, message=f"API连接失败，状态码: {response.status_code}")
+    except httpx.TimeoutException:
+        return TestConnectionResponse(success=False, message="API连接超时，请检查网络连接")
     except Exception as e:
         return TestConnectionResponse(success=False, message=f"API连接失败: {str(e)}")
 
