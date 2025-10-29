@@ -194,7 +194,7 @@ const SettingsPage: React.FC<{ onSetupComplete: () => void }> = ({ onSetupComple
         )}
 
         {activeTab === 'downloads' && (
-          <div className="bg-white shadow rounded-lg p-6">
+          <div className="bg-white shadow rounded-lg">
             <DownloadSettings
               settings={downloadSettings}
               onSave={handleSaveDownloadSettings}
