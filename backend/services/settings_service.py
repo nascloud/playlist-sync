@@ -159,7 +159,6 @@ class SettingsService:
 
         return DownloadSettings(
             id=1,
-            api_key=final_api_key,
             download_path=final_download_path,
             preferred_quality=db_settings.get('preferred_quality', 'high'),
             download_lyrics=bool(int(db_settings.get('download_lyrics', 0))),
@@ -193,14 +192,6 @@ class SettingsService:
                 cursor.execute(
                     "INSERT INTO download_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                     (key, str(value))
-                )
-
-            # 如果请求中提供了 API Key（例如，从UI更新），则加密并保存
-            if settings.api_key:
-                encrypted_api_key = encrypt_token(settings.api_key)
-                cursor.execute(
-                    "INSERT INTO download_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    ('api_key', encrypted_api_key)
                 )
 
             # 如果请求中提供了下载路径，则保存

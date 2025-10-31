@@ -87,7 +87,7 @@ class DownloadQueueManager:
         loop = asyncio.get_running_loop()
         settings = await loop.run_in_executor(None, SettingsService.get_download_settings)
         
-        if settings and settings.api_key:
+        if settings:
             try:
                 await loop.run_in_executor(
                     None,
@@ -101,7 +101,7 @@ class DownloadQueueManager:
                 logger.error(f"下载器初始化失败: {e}", exc_info=True)
                 return False
         else:
-            logger.error("无法初始化下载器：未找到下载设置或API Key。")
+            logger.error("无法初始化下载器：未找到下载设置。")
             return False
 
     def start_processing(self):
