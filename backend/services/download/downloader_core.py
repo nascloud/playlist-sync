@@ -449,7 +449,8 @@ class DownloaderCore:
         if not self.downloader:
             raise ValueError("下载器未初始化")
         
-        search_term = f"{item.artist} {item.title}"
+        # 修改搜索策略：只使用歌曲标题进行搜索，搜索结果后再进行匹配
+        search_term = item.title
         # 处理需要排除的平台
         if exclude_platforms is None:
             exclude_platforms = []
