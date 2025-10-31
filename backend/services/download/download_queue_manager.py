@@ -148,14 +148,12 @@ class DownloadQueueManager:
         loop = asyncio.get_running_loop()
 
         try:
-            # 在下载前获取最新的下载设置
+            # 在下载前获取最新的全局下载设置
             settings = await loop.run_in_executor(None, SettingsService.get_download_settings)
             preferred_quality = settings.preferred_quality if settings else '无损'
-            # 获取会话的歌词下载设置
-            session_download_lyrics = download_db_service.get_session_download_lyrics(session_id)
-            if session_download_lyrics is None:
-                session_download_lyrics = False
-            download_lyrics = session_download_lyrics
+            # 获取当前的全局歌词下载设置（而不是会话创建时的设置）
+            # 这样用户更改设置后，新的下载会立即生效
+            download_lyrics = settings.download_lyrics if settings else False
             
             session_logger.info(f"使用下载设置: 音质='{preferred_quality}', 下载歌词={download_lyrics}")
 

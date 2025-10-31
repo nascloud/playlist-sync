@@ -213,16 +213,24 @@ class MusicDownloader:
     async def get_lyrics(self, platform: str, song_id: str, session_logger: logging.Logger) -> Optional[str]:
         """
         获取歌曲歌词
-        :param platform: 平台，如 'qq' 或 'netease'
+        :param platform: 平台，如 'tencent' 或 'netease' (注意：这里使用的是映射后的平台名)
         :param song_id: 歌曲ID
         :param session_logger: 日志记录器
         :return: 歌词内容，如果失败则返回 None
         """
         try:
             # 根据平台构造相应的歌词 API 请求 URL
-            if platform == 'qq':
+            # 根据API文档，不同的平台有不同的歌词API端点
+            if platform == 'tencent':
                 endpoint = "/v2/music/tencent/lyric"
-                params = {"mid": song_id}
+                # QQ音乐的song_id可能是"songid-songmid"格式，需要提取songmid部分
+                # 或者直接使用song_id，因为API支持两种参数格式
+                if '-' in song_id:
+                    # 如果是"songid-songmid"格式，提取mid
+                    parts = song_id.split('-', 1)
+                    params = {"mid": parts[1]}  # 使用mid参数
+                else:
+                    params = {"id": song_id}  # 使用id参数
             elif platform == 'netease':
                 endpoint = "/v2/music/netease/lyric"
                 params = {"id": song_id}
@@ -238,13 +246,15 @@ class MusicDownloader:
             # 处理 API 的响应
             if response.get('code') == 200 and 'data' in response:
                 data = response.get('data', {})
-                lrc_content = data.get('lrc')
+                # API响应可能在不同的字段中包含歌词数据
+                # 检查多个可能的歌词字段
+                lrc_content = data.get('lrc') or data.get('lyric') or data.get('lyrics') or data.get('content')
                 
                 if lrc_content:
                     session_logger.info("歌词获取成功")
                     return lrc_content
                 else:
-                    session_logger.warning("API 响应中未找到歌词内容")
+                    session_logger.warning(f"API 响应中未找到歌词内容。返回的数据: {data}")
                     return None
             else:
                 session_logger.warning(f"获取歌词失败，API 返回错误: {response.get('message', '未知错误')}")
