@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class MusicDownloader:
     """
-    一个用于与 AIAPI.VIP 交互的音乐下载器核心。
+    一个用于与 api.vkeys.cn 交互的音乐下载器核心。
     """
     def __init__(self):
         self.base_url = "https://api.vkeys.cn"
@@ -263,7 +263,7 @@ class MusicDownloader:
 
     async def download_song(self, item: DownloadQueueItem, music_id: str, music_type: str,
                            download_dir: str, preferred_quality: str = '无损',
-                           download_lyrics: bool = False, session_logger: Optional[logging.Logger] = None,
+                           download_lyrics: bool = True, session_logger: Optional[logging.Logger] = None,
                            music_info: Optional[Dict[str, Any]] = None) -> str:
         """
         下载歌曲，并可选择下载歌词和音质。返回下载的文件路径。
@@ -283,6 +283,9 @@ class MusicDownloader:
         if not song_url:
             raise APIError("未找到可用的下载链接。")
 
+        # 提取专辑封面URL
+        cover_url = data.get('cover')
+        
         # 尝试从API响应中获取文件格式，如果没有，则根据URL推断
         file_format_match = re.search(r'\.(\w+)$', song_url.split('?')[0])
         file_format = file_format_match.group(1) if file_format_match else 'mp3'
@@ -332,7 +335,8 @@ class MusicDownloader:
         # 注意：我们需要确保 song_info_details 仍然可用或调整它
         song_info_details = data  # 使用整个 data 字典作为 song_info_details
         metadata_handler = MetadataHandler()
-        metadata_handler.embed_metadata(str(song_filepath), item, song_info_details, log)
+        # 传递封面URL到metadata_handler
+        metadata_handler.embed_metadata(str(song_filepath), item, song_info_details, log, cover_url=cover_url)
 
         if download_lyrics:
             log.info("正在下载歌词...")

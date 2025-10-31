@@ -17,14 +17,14 @@ class MetadataHandler:
     """处理音频文件的元数据嵌入"""
     
     def embed_metadata(self, file_path: str, item: DownloadQueueItem, 
-                      song_api_info: dict, log: logging.Logger):
+                      song_api_info: dict, log: logging.Logger, cover_url: Optional[str] = None):
         """
         将元数据和封面图片嵌入到音频文件中。
         """
         log.info(f"开始为文件 '{Path(file_path).name}' 嵌入元数据...")
         try:
             self._embed_basic_metadata(file_path, item, song_api_info, log)
-            self._embed_cover_art(file_path, song_api_info, log)
+            self._embed_cover_art(file_path, song_api_info, log, cover_url=cover_url)
             log.info("元数据处理流程完成。")
         except Exception as e:
             log.error(f"嵌入元数据时发生未知错误: {e}", exc_info=True)
@@ -70,10 +70,20 @@ class MetadataHandler:
         audio.save()
         log.info("基础元数据写入成功。")
 
-    def _embed_cover_art(self, file_path: str, song_api_info: dict, log: logging.Logger):
+    def _embed_cover_art(self, file_path: str, song_api_info: dict, log: logging.Logger, cover_url: Optional[str] = None):
         """嵌入封面图片"""
         audio = File(file_path)
-        pic_url = song_api_info.get('pic') if song_api_info else None
+        
+        # 优先使用直接传入的cover_url参数
+        pic_url = cover_url
+        
+        # 如果cover_url为空，则尝试从song_api_info中获取
+        if not pic_url:
+            # 新API使用'cover'字段，作为后备尝试'pic'字段
+            pic_url = song_api_info.get('cover') if song_api_info else None
+        if not pic_url:
+            pic_url = song_api_info.get('pic') if song_api_info else None
+            
         log.info(f"API返回的封面URL: {pic_url}")
 
         if not pic_url:
