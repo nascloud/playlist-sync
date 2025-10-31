@@ -284,4 +284,14 @@ async def search_songs(
         logging.exception(f"搜索歌曲时发生错误:")
         raise HTTPException(status_code=500, detail=f"搜索失败: {str(e)}")
 
+@router.post("/refresh-session-counts", response_model=DownloadActionResponse)
+async def refresh_session_counts():
+    """刷新并修正所有会话的计数，重新统计每个会话中的成功和失败项目数。"""
+    try:
+        count = download_db_service.refresh_all_session_counts()
+        return DownloadActionResponse(success=True, message=f"已成功修正 {count} 个下载会话的计数。")
+    except Exception as e:
+        logging.exception("修正会话计数时发生错误：")
+        raise HTTPException(status_code=500, detail=f"修正会话计数失败: {str(e)}")
+
 

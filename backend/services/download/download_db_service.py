@@ -176,32 +176,53 @@ class DownloadDBService:
                 cursor = conn.cursor()
                 cursor.execute('BEGIN EXCLUSIVE')
 
+                # 先获取项目当前状态
+                cursor.execute("SELECT session_id, status FROM download_queue WHERE id = ?", (item_id,))
+                item_row = cursor.fetchone()
+                if not item_row:
+                    # 项目不存在，直接返回
+                    conn.commit()
+                    return
+
+                old_status = item_row['status']
+                session_id = item_row['session_id']
+
                 # 1. 更新队列项目状态
                 cursor.execute(
                     "UPDATE download_queue SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (status, error_message, item_id)
                 )
 
-                # 获取 session_id
-                cursor.execute("SELECT session_id FROM download_queue WHERE id = ?", (item_id,))
-                session_id_row = cursor.fetchone()
-                session_id = session_id_row['session_id'] if session_id_row else None
+                # 计算会话计数变化
+                success_delta = 0
+                failed_delta = 0
 
-                # 更新计数和检查会话状态（无论成功还是失败）
+                # 减少旧状态的计数
+                if old_status == 'success':
+                    success_delta -= 1
+                elif old_status == 'failed':
+                    failed_delta -= 1
+                
+                # 增加新状态的计数
                 if status == 'success':
-                    # 2. 增加 session 的 success_count
-                    if session_id:
-                        cursor.execute(
-                            "UPDATE download_sessions SET success_count = success_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                            (session_id,)
-                        )
+                    success_delta += 1
                 elif status == 'failed':
-                    # 如果失败，也更新计数器
+                    failed_delta += 1
+
+                # 如果有计数变化，更新会话
+                if success_delta != 0 or failed_delta != 0:
                     if session_id:
-                        cursor.execute(
-                            "UPDATE download_sessions SET failed_count = failed_count + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                            (session_id,)
-                        )
+                        # 更新会话计数
+                        if success_delta != 0:
+                            cursor.execute(
+                                "UPDATE download_sessions SET success_count = success_count + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                (success_delta, session_id)
+                            )
+                        if failed_delta != 0:
+                            cursor.execute(
+                                "UPDATE download_sessions SET failed_count = failed_count + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                                (failed_delta, session_id)
+                            )
                 
                 # 检查会话是否完成（无论成功还是失败）
                 if session_id:
@@ -582,6 +603,46 @@ class DownloadDBService:
             return _get_download_lyrics(conn, session_id)
         else:
             return self._execute_in_thread(_get_download_lyrics, session_id)
+
+    def refresh_all_session_counts(self):
+        """修正所有会话的计数，通过重新计算每个会话中的实际项目状态"""
+        def _refresh_all_counts(conn: sqlite3.Connection):
+            try:
+                conn.isolation_level = 'EXCLUSIVE'
+                cursor = conn.cursor()
+                cursor.execute('BEGIN EXCLUSIVE')
+                
+                # 获取所有会话ID
+                cursor.execute("SELECT id FROM download_sessions")
+                session_ids = [row['id'] for row in cursor.fetchall()]
+                
+                for session_id in session_ids:
+                    # 计算实际的成功和失败数量
+                    cursor.execute(
+                        "SELECT COUNT(*) as count FROM download_queue WHERE session_id = ? AND status = 'success'",
+                        (session_id,)
+                    )
+                    actual_success_count = cursor.fetchone()['count']
+                    
+                    cursor.execute(
+                        "SELECT COUNT(*) as count FROM download_queue WHERE session_id = ? AND status = 'failed'",
+                        (session_id,)
+                    )
+                    actual_failed_count = cursor.fetchone()['count']
+                    
+                    # 更新会话的计数器
+                    cursor.execute(
+                        "UPDATE download_sessions SET success_count = ?, failed_count = ? WHERE id = ?",
+                        (actual_success_count, actual_failed_count, session_id)
+                    )
+                
+                conn.commit()
+                return len(session_ids)
+            except Exception:
+                conn.rollback()
+                raise
+        
+        return self._execute_in_thread(_refresh_all_counts)
 
 # 实例化服务
 download_db_service = DownloadDBService()
