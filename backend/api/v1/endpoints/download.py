@@ -51,11 +51,15 @@ async def get_session_logs(session_id: int):
 async def get_sessions_status():
     """获取所有下载会话及其包含的项目的完整层级状态。"""
     try:
+        logging.info(f"[DEBUG] API: 获取会话状态请求开始")
         loop = asyncio.get_running_loop()
         status_data = await loop.run_in_executor(None, download_db_service.get_full_queue_status)
+        logging.info(f"[DEBUG] API: 获取到状态数据，会话数量={len(status_data.get('sessions', []))}")
+        for session in status_data.get("sessions", []):
+            logging.info(f"[DEBUG] API: 会话 {session['id']}: task_id={session['task_id']}, status={session['status']}, items_count={len(session.get('items', []))}")
         return SessionStatusResponse(success=True, sessions=status_data.get("sessions", []))
     except Exception as e:
-        logging.exception("获取会话状态时发生错误：")
+        logging.exception(f"[DEBUG] API: 获取会话状态时发生错误: {str(e)}")
         raise HTTPException(status_code=500, detail=f"获取会话状态失败: {str(e)}")
 
 @router.get("/download-settings", response_model=DownloadSettings)
@@ -113,40 +117,47 @@ async def test_api_connection() -> Any:
 async def download_all_missing(request: DownloadAllRequest, download_service: DownloadService = Depends(get_download_service)) -> Any:
     """一键下载指定任务中所有缺失的歌曲。"""
     try:
+        logging.info(f"[DEBUG] API: 接收到批量下载请求，task_id={request.task_id}")
         session_id = await download_service.download_all_missing(task_id=request.task_id)
+        logging.info(f"[DEBUG] API: download_all_missing返回session_id={session_id}")
         if session_id > 0:
             return DownloadActionResponse(
-                success=True, 
+                success=True,
                 session_id=session_id,
                 message=f"已为任务 {request.task_id} 创建批量下载会话。"
             )
         else:
             return DownloadActionResponse(
-                success=False, 
+                success=False,
                 session_id=0,
                 message=f"任务 {request.task_id} 没有需要下载的歌曲。"
             )
     except Exception as e:
+        logging.error(f"[DEBUG] API: 批量下载失败，task_id={request.task_id}, error={str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"创建批量下载失败: {str(e)}")
 
 @router.post("/single", response_model=DownloadActionResponse)
 async def download_single_song(request: DownloadSingleRequest, download_service: DownloadService = Depends(get_download_service)) -> Any:
     """下载单个指定的歌曲。"""
     logging.info(
-        f"接收到单曲下载请求: task_id={request.task_id}, song_id={request.song_id}, "
+        f"[DEBUG] API: 接收到单曲下载请求: task_id={request.task_id}, song_id={request.song_id}, "
         f"title='{request.title}', artist='{request.artist}'"
     )
     try:
+        logging.info(f"[DEBUG] API: 准备调用download_service.download_single_song")
         session_id = await download_service.download_single_song(
             task_id=request.task_id,
             song_info=request  # 传递 Pydantic 模型实例
         )
+        logging.info(f"[DEBUG] API: download_single_song返回session_id={session_id}")
         if session_id > 0:
+            logging.info(f"[DEBUG] API: 单曲下载成功，session_id={session_id}")
             return DownloadActionResponse(success=True, session_id=session_id, message=f"歌曲 '{request.title}' 已加入下载队列。")
         else:
+            logging.error(f"[DEBUG] API: 单曲下载失败，session_id=0")
             raise HTTPException(status_code=500, detail="无法将歌曲加入下载队列。")
     except Exception as e:
-        logging.exception(f"下载单曲 '{request.title}' 时发生错误:")
+        logging.error(f"[DEBUG] API: 下载单曲 '{request.title}' 时发生错误: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"下载单曲失败: {str(e)}")
 
 @router.post("/session/{session_id}/pause", response_model=DownloadActionResponse)

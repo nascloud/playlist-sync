@@ -49,32 +49,41 @@ class DownloadService:
         """
         下载指定同步任务中所有缺失的歌曲。
         """
+        logger.info(f"[DEBUG] DownloadService: 开始处理批量下载请求，task_id={task_id}")
+        
         # 验证 task_id 是否存在
         task = self.task_service.get_task_by_id(task_id)
         if not task:
+            logger.error(f"[DEBUG] DownloadService: 任务ID {task_id} 不存在")
             raise ValueError(f"任务ID {task_id} 不存在。")
 
-        logger.info(f"任务 {task_id}: 请求批量下载所有缺失歌曲。")
+        logger.info(f"[DEBUG] DownloadService: 任务 {task_id} 验证成功，platform={task.platform}")
         loop = asyncio.get_running_loop()
         unmatched_songs = await loop.run_in_executor(
-            None, 
-            self.task_service.get_unmatched_songs_for_task, 
+            None,
+            self.task_service.get_unmatched_songs_for_task,
             task_id
         )
         
+        logger.info(f"[DEBUG] DownloadService: 找到 {len(unmatched_songs) if unmatched_songs else 0} 首未匹配歌曲")
+        
         if not unmatched_songs:
-            logger.info(f"任务 {task_id}: 没有找到未匹配的歌曲可供下载。")
+            logger.info(f"[DEBUG] DownloadService: 任务 {task_id}: 没有找到未匹配的歌曲可供下载。")
             return 0
         
+        logger.info(f"[DEBUG] DownloadService: 开始构建下载项目列表")
         download_items = [
             DownloadQueueItemCreate(
-                title=song['title'], 
+                title=song['title'],
                 artist=song['artist'],
                 album=song.get('album'),
                 song_id=song.get('song_id'),
                 platform=task.platform
             ) for song in unmatched_songs
         ]
+        
+        logger.info(f"[DEBUG] DownloadService: 构建了 {len(download_items)} 个下载项目，准备添加到队列")
+        logger.info(f"[DEBUG] DownloadService: 第一个项目示例: {download_items[0].dict() if download_items else 'None'}")
 
         session_id = await self.queue_manager.add_to_queue(
             task_id=task_id,
@@ -82,33 +91,43 @@ class DownloadService:
             items=download_items,
             conn=db
         )
+        logger.info(f"[DEBUG] DownloadService: add_to_queue返回session_id={session_id}")
         return session_id
 
     async def download_single_song(self, task_id: int, song_info: DownloadSingleRequest, db=None) -> int:
         """
         下载单个指定的歌曲。
         """
+        logger.info(f"[DEBUG] DownloadService: 开始处理单曲下载请求，task_id={task_id}")
+        logger.info(f"[DEBUG] DownloadService: 歌曲信息: title={song_info.title}, artist={song_info.artist}, song_id={song_info.song_id}")
+        
         # 处理 task_id 为 0 或 None 的情况，将其视为"搜索下载"任务
         if task_id == 0 or task_id is None:
             # 对于搜索下载，使用默认平台
             platform = 'qq'  # 默认使用 qq 平台
-            logger.info(f"搜索下载任务: 下载单曲 '{song_info.title}'。")
+            logger.info(f"[DEBUG] DownloadService: 搜索下载任务: 下载单曲 '{song_info.title}'。")
             # 使用搜索下载任务的ID
             effective_task_id = self.SEARCH_DOWNLOAD_TASK['id']
         else:
             # 验证 task_id 是否存在
+            logger.info(f"[DEBUG] DownloadService: 验证任务ID {task_id} 是否存在")
             task = self.task_service.get_task_by_id(task_id)
             if not task:
+                logger.error(f"[DEBUG] DownloadService: 任务ID {task_id} 不存在")
                 raise ValueError(f"任务ID {task_id} 不存在。")
             platform = task.platform
-            logger.info(f"任务 {task_id}: 请求下载单曲 '{song_info.title}'。")
+            logger.info(f"[DEBUG] DownloadService: 任务 {task_id} 验证成功，platform={platform}")
+            logger.info(f"[DEBUG] DownloadService: 任务 {task_id}: 请求下载单曲 '{song_info.title}'。")
             effective_task_id = task_id
         
         # 从全局设置中获取歌词下载配置
         loop = asyncio.get_running_loop()
+        logger.info(f"[DEBUG] DownloadService: 获取下载设置")
         settings = await loop.run_in_executor(None, self.settings_service.get_download_settings)
         download_lrc = settings.download_lyrics if settings else False
+        logger.info(f"[DEBUG] DownloadService: 下载设置: download_lrc={download_lrc}")
         
+        logger.info(f"[DEBUG] DownloadService: 构建下载项目")
         item = DownloadQueueItemCreate(
             song_id=song_info.song_id,
             title=song_info.title,
@@ -116,7 +135,9 @@ class DownloadService:
             album=song_info.album,
             platform=platform
         )
+        logger.info(f"[DEBUG] DownloadService: 下载项目构建完成: {item.dict()}")
 
+        logger.info(f"[DEBUG] DownloadService: 准备添加到队列，effective_task_id={effective_task_id}")
         session_id = await self.queue_manager.add_to_queue(
             task_id=effective_task_id,
             session_type='individual',
@@ -124,6 +145,7 @@ class DownloadService:
             download_lrc=download_lrc,
             conn=db
         )
+        logger.info(f"[DEBUG] DownloadService: add_to_queue返回session_id={session_id}")
         return session_id
 
     async def _get_auto_download_settings(self, task_id: int) -> dict:

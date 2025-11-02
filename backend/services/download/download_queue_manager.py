@@ -31,52 +31,75 @@ class DownloadQueueManager:
         将一批下载项添加到队列。如果存在与task_id关联的活跃会话，则将项目添加到该会话；否则，创建新会话。
         """
         count = len(items)
+        logger.info(f"[DEBUG] QueueManager: add_to_queue开始，task_id={task_id}, session_type={session_type}, items_count={count}")
+        
         if count == 0:
+            logger.warning(f"[DEBUG] QueueManager: 没有项目需要添加，返回0")
             return 0
 
         loop = asyncio.get_running_loop()
+        logger.info(f"[DEBUG] QueueManager: 准备执行数据库操作")
 
         def _add_logic():
+            logger.info(f"[DEBUG] QueueManager: 获取数据库连接")
             conn = get_db_connection()
             try:
                 # 1. 查找与 task_id 关联的最新会话
+                logger.info(f"[DEBUG] QueueManager: 查找任务 {task_id} 的现有会话")
                 existing_session_id = download_db_service.find_latest_session_by_task_id(task_id, conn=conn)
+                logger.info(f"[DEBUG] QueueManager: 查找结果 existing_session_id={existing_session_id}")
 
                 if existing_session_id:
                     # 2a. 加入现有会话
-                    logger.info(f"找到任务 {task_id} 的现有会话 {existing_session_id}，将合并 {count} 个项目。")
+                    logger.info(f"[DEBUG] QueueManager: 找到任务 {task_id} 的现有会话 {existing_session_id}，将合并 {count} 个项目。")
                     # 重新激活（如果是 'completed' 状态）
                     download_db_service.reactivate_session(existing_session_id, conn=conn)
+                    logger.info(f"[DEBUG] QueueManager: 会话 {existing_session_id} 已重新激活")
                     # 更新歌曲总数
                     download_db_service.update_session_song_count(existing_session_id, count, conn=conn)
+                    logger.info(f"[DEBUG] QueueManager: 会话 {existing_session_id} 歌曲总数已更新")
                     # 添加新项目
+                    logger.info(f"[DEBUG] QueueManager: 开始添加 {count} 个项目到会话 {existing_session_id}")
                     download_db_service.add_items_to_queue(existing_session_id, items, conn=conn)
+                    logger.info(f"[DEBUG] QueueManager: 项目添加完成，准备提交事务")
                     conn.commit()
+                    logger.info(f"[DEBUG] QueueManager: 事务已提交，返回现有会话ID {existing_session_id}")
                     return existing_session_id
                 else:
                     # 2b. 创建新会话
-                    logger.info(f"未找到任务 {task_id} 的会话，将创建新会话。")
+                    logger.info(f"[DEBUG] QueueManager: 未找到任务 {task_id} 的会话，将创建新会话。")
                     session_id = download_db_service.create_download_session(
                         task_id, session_type, count, conn=conn
                     )
+                    logger.info(f"[DEBUG] QueueManager: 新会话已创建，session_id={session_id}")
                     # 存储歌词下载设置到会话中
                     download_db_service.update_session_download_lyrics(session_id, download_lrc, conn=conn)
+                    logger.info(f"[DEBUG] QueueManager: 会话歌词下载设置已更新，download_lrc={download_lrc}")
+                    logger.info(f"[DEBUG] QueueManager: 准备提交事务")
                     conn.commit()
+                    logger.info(f"[DEBUG] QueueManager: 事务已提交，返回新会话ID {session_id}")
                     return session_id
             except Exception as e:
+                logger.error(f"[DEBUG] QueueManager: 发生异常，准备回滚事务: {e}", exc_info=True)
                 conn.rollback()
+                logger.error(f"[DEBUG] QueueManager: 事务已回滚")
                 logger.error(f"添加项目到队列时发生数据库错误: {e}", exc_info=True)
                 raise
             finally:
+                logger.info(f"[DEBUG] QueueManager: 关闭数据库连接")
                 conn.close()
 
+        logger.info(f"[DEBUG] QueueManager: 在执行器中运行数据库操作")
         session_id = await loop.run_in_executor(
             None, _add_logic
         )
+        logger.info(f"[DEBUG] QueueManager: 数据库操作完成，获得session_id={session_id}")
 
-        logger.info(f"会话 {session_id} 已更新/创建，并添加了 {count} 个项目到队列。")
+        logger.info(f"[DEBUG] QueueManager: 会话 {session_id} 已更新/创建，并添加了 {count} 个项目到队列。")
 
+        logger.info(f"[DEBUG] QueueManager: 准备启动队列处理")
         self.start_processing()
+        logger.info(f"[DEBUG] QueueManager: 队列处理已启动，返回session_id={session_id}")
         return session_id
 
     async def _ensure_downloader_initialized(self):

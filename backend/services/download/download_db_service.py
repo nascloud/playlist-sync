@@ -27,8 +27,11 @@ class DownloadDBService:
 
     def create_download_session(self, task_id: int, session_type: str, total_songs: int, conn: Optional[sqlite3.Connection] = None) -> int:
         """创建一个新的下载会话并返回其ID。"""
+        logger.info(f"[DEBUG] DBService: create_download_session开始，task_id={task_id}, session_type={session_type}, total_songs={total_songs}")
+        
         def _create_session(conn: sqlite3.Connection, task_id: int, session_type: str, total_songs: int) -> int:
             cursor = conn.cursor()
+            logger.info(f"[DEBUG] DBService: 准备插入新会话到数据库")
             cursor.execute(
                 """
                 INSERT INTO download_sessions (task_id, session_type, total_songs, status, success_count, failed_count)
@@ -36,17 +39,26 @@ class DownloadDBService:
                 """,
                 (task_id, session_type, total_songs)
             )
-            conn.commit()
-            return cursor.lastrowid
+            session_id = cursor.lastrowid
+            logger.info(f"[DEBUG] DBService: 新会话已插入，session_id={session_id}")
+            if not conn:
+                conn.commit()
+            return session_id
 
         if conn:
+            logger.info(f"[DEBUG] DBService: 使用提供的连接创建会话")
             return _create_session(conn, task_id, session_type, total_songs)
-        return self._execute_in_thread(_create_session, task_id, session_type, total_songs)
+        else:
+            logger.info(f"[DEBUG] DBService: 使用新连接创建会话")
+            return self._execute_in_thread(_create_session, task_id, session_type, total_songs)
 
     def add_items_to_queue(self, session_id: int, items: List[DownloadQueueItemCreate], conn: Optional[sqlite3.Connection] = None):
         """将多个项目批量添加到下载队列。"""
+        logger.info(f"[DEBUG] DBService: add_items_to_queue开始，session_id={session_id}, items_count={len(items)}")
+        
         def _add_items(conn: sqlite3.Connection, session_id: int, items: List[DownloadQueueItemCreate]):
             cursor = conn.cursor()
+            logger.info(f"[DEBUG] DBService: 准备插入 {len(items)} 个项目到队列")
             
             from datetime import datetime, timezone
             now_utc = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
@@ -65,37 +77,52 @@ class DownloadDBService:
                     now_utc
                 ) for item in items
             ]
+            logger.info(f"[DEBUG] DBService: 第一个项目示例: {items_to_insert[0] if items_to_insert else 'None'}")
+            logger.info(f"[DEBUG] DBService: 执行批量插入操作")
             cursor.executemany(
                 """
                 INSERT INTO download_queue (
-                    session_id, song_id, title, artist, album, quality, 
+                    session_id, song_id, title, artist, album, quality,
                     status, platform, created_at, updated_at
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 items_to_insert
             )
-            conn.commit()
+            logger.info(f"[DEBUG] DBService: 批量插入完成，影响行数={cursor.rowcount}")
+            if not conn:
+                conn.commit()
+            logger.info(f"[DEBUG] DBService: 项目添加完成")
         
         if conn:
+            logger.info(f"[DEBUG] DBService: 使用提供的连接添加项目")
             _add_items(conn, session_id, items)
         else:
+            logger.info(f"[DEBUG] DBService: 使用新连接添加项目")
             self._execute_in_thread(_add_items, session_id, items)
 
     def find_latest_session_by_task_id(self, task_id: int, conn: Optional[sqlite3.Connection] = None) -> Optional[int]:
         """根据 task_id 查找最新的一个会话，无论状态如何。"""
+        logger.info(f"[DEBUG] DBService: find_latest_session_by_task_id开始，task_id={task_id}")
+        
         def _find_session(conn: sqlite3.Connection, task_id: int) -> Optional[int]:
             cursor = conn.cursor()
+            logger.info(f"[DEBUG] DBService: 执行查询最新会话")
             cursor.execute(
                 "SELECT id FROM download_sessions WHERE task_id = ? ORDER BY created_at DESC LIMIT 1",
                 (task_id,)
             )
             row = cursor.fetchone()
-            return row['id'] if row else None
+            session_id = row['id'] if row else None
+            logger.info(f"[DEBUG] DBService: 查询结果 session_id={session_id}")
+            return session_id
 
         if conn:
+            logger.info(f"[DEBUG] DBService: 使用提供的连接查找会话")
             return _find_session(conn, task_id)
-        return self._execute_in_thread(_find_session, task_id)
+        else:
+            logger.info(f"[DEBUG] DBService: 使用新连接查找会话")
+            return self._execute_in_thread(_find_session, task_id)
 
     def reactivate_session(self, session_id: int, conn: Optional[sqlite3.Connection] = None):
         """如果一个会话已完成，则将其重新激活。"""
@@ -497,6 +524,8 @@ class DownloadDBService:
 
     def get_full_queue_status(self) -> dict:
         """获取所有会话（包含其下所有项目）的层级结构列表。"""
+        logger.info(f"[DEBUG] DBService: get_full_queue_status开始")
+        
         def _get_status(conn: sqlite3.Connection) -> dict:
             cursor = conn.cursor()
             
@@ -518,14 +547,17 @@ class DownloadDBService:
                 LEFT JOIN tasks t ON s.task_id = t.id
                 ORDER BY s.created_at DESC
             """
+            logger.info(f"[DEBUG] DBService: 执行查询所有会话")
             cursor.execute(query)
             sessions_raw = cursor.fetchall()
+            logger.info(f"[DEBUG] DBService: 找到 {len(sessions_raw)} 个会话")
             
             sessions_map = {row['id']: dict(row) for row in sessions_raw}
             for session_id in sessions_map:
                 sessions_map[session_id]['items'] = []
 
             if not sessions_map:
+                logger.info(f"[DEBUG] DBService: 没有找到会话，返回空列表")
                 return {"sessions": []}
 
             session_ids = tuple(sessions_map.keys())
@@ -533,10 +565,10 @@ class DownloadDBService:
             
             # 2. 获取所有队列项目，同样使用 COALESCE
             queue_query = f"""
-                SELECT 
-                    id, session_id, song_id, title, artist, album, 
-                    COALESCE(quality, 'unknown') as quality, 
-                    COALESCE(status, 'pending') as status, 
+                SELECT
+                    id, session_id, song_id, title, artist, album,
+                    COALESCE(quality, 'unknown') as quality,
+                    COALESCE(status, 'pending') as status,
                     error_message,
                     strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(created_at, '1970-01-01T00:00:00Z')) as created_at,
                     strftime('%Y-%m-%dT%H:%M:%SZ', updated_at) as updated_at
@@ -544,15 +576,19 @@ class DownloadDBService:
                 WHERE session_id IN ({placeholders})
                 ORDER BY created_at ASC
             """
+            logger.info(f"[DEBUG] DBService: 执行查询队列项目，session_ids={session_ids}")
             cursor.execute(queue_query, session_ids)
             queue_items = [dict(row) for row in cursor.fetchall()]
+            logger.info(f"[DEBUG] DBService: 找到 {len(queue_items)} 个队列项目")
 
             for item in queue_items:
                 session_id = item['session_id']
                 if session_id in sessions_map:
                     sessions_map[session_id]['items'].append(item)
 
-            return {"sessions": list(sessions_map.values())}
+            result = {"sessions": list(sessions_map.values())}
+            logger.info(f"[DEBUG] DBService: 返回状态结果，包含 {len(result['sessions'])} 个会话")
+            return result
 
         return self._execute_in_thread(_get_status)
         
