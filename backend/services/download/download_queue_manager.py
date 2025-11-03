@@ -72,6 +72,10 @@ class DownloadQueueManager:
                         task_id, session_type, count, conn=conn
                     )
                     logger.info(f"[DEBUG] QueueManager: 新会话已创建，session_id={session_id}")
+                    # 添加项目到队列
+                    logger.info(f"[DEBUG] QueueManager: 开始添加 {count} 个项目到新会话 {session_id}")
+                    download_db_service.add_items_to_queue(session_id, items, conn=conn)
+                    logger.info(f"[DEBUG] QueueManager: 项目添加完成")
                     # 存储歌词下载设置到会话中
                     download_db_service.update_session_download_lyrics(session_id, download_lrc, conn=conn)
                     logger.info(f"[DEBUG] QueueManager: 会话歌词下载设置已更新，download_lrc={download_lrc}")
