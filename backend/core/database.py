@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 def get_db_connection():
     """获取数据库连接并启用WAL模式"""
-    db_path = "./database.sqlite"
+    db_path = "./data/database.sqlite"
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row  # 使结果可以通过列名访问
     conn.execute('PRAGMA journal_mode=WAL')  # 启用WAL模式，提高并发性能

@@ -93,6 +93,13 @@ npm run dev
 docker-compose up --build
 ```
 
+### 数据库管理
+
+项目使用SQLite数据库，并将数据库文件存储在 `backend/data/` 目录中以便持久化。Docker配置已设置为挂载整个数据目录，这可以确保：
+- 数据库文件和WAL临时文件都在同一挂载点
+- 防止因容器重启导致的数据库损坏
+- 实现数据的持久化保存
+
 ## 🛠️ 核心服务
 
 ### PlaylistService

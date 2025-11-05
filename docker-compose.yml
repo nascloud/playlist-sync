@@ -12,8 +12,8 @@ services:
     networks:
       - app-network
     volumes:
-      # 挂载数据库文件以实现数据持久化
-      - ./backend/database.sqlite:/usr/src/app/database.sqlite
+      # 挂载数据目录以实现数据持久化（包含数据库文件及WAL文件等）
+      - ./backend/data:/usr/src/app/data
       # 挂载日志目录
       - ./backend/logs:/usr/src/app/logs
       # 挂载下载目录

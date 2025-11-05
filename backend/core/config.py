@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Plex Music Sync API"
     API_V1_STR: str = "/api"
     PORT: int = 3001
-    DATABASE_URL: str = "sqlite:///./database.sqlite"
+    DATABASE_URL: str = "sqlite:///./data/database.sqlite"
     DEBUG: bool = False
 
     # Auth settings
