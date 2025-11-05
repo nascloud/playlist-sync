@@ -1,201 +1,182 @@
 # Plex Playlist Sync
 
-Plex Playlist Sync 是一个强大的音乐同步工具，可将网易云音乐、QQ音乐等平台的歌单自动同步到您的 Plex 媒体服务器。该工具不仅支持歌单同步，还提供智能下载和播放列表管理功能。
+**Plex Playlist Sync** 是一个简单易用的音乐同步工具，可以自动将网易云音乐、QQ音乐等平台的歌单同步到你的 Plex 媒体服务器。你只需配置一次，之后它会自动帮你下载和整理音乐到正确的播放列表中。
 
-## 🌟 核心功能
+## 🎵 功能介绍
 
-### 歌单同步
-- **多平台支持**：网易云音乐、QQ音乐
-- **定时同步**：可配置的定时任务，自动保持歌单更新
-- **智能解析**：自动补全缺失的歌曲信息（如专辑信息）
+### 🔄 歌单同步
+- **支持多个音乐平台**：网易云音乐、QQ音乐
+- **自动同步**：设置好后，系统会自动更新你的歌单
+- **智能补全**：自动查找缺失的歌曲信息，如专辑封面等
 
-### 智能下载
-- **三种下载方式**：
-  - 一键下载全部缺失歌曲
-  - 单个歌曲下载
+### 📥 智能下载
+- **多种下载方式**：
+  - 一键下载所有缺失歌曲
+  - 选择下载单首歌曲
   - 自动下载（同步后自动开始）
-- **智能信息补全**：在下载阶段自动补全歌曲信息，避免触发平台风控
-- **队列管理**：完整的下载队列管理，支持暂停、重试等操作
-- **并发控制**：智能并发下载，避免系统过载
+- **下载队列管理**：支持暂停、重试等功能
+- **防过载**：智能控制下载速度，避免影响你的网络
 
-### 智能播放列表
-- **自动归类**：新下载或手动添加的音乐自动归类到对应播放列表
-- **双重触发**：
-  - 下载完成后立即处理
-  - 定期扫描（默认每30分钟）
-- **智能匹配**：优化的字符串标准化和权重分配算法
-
-## 🏗️ 项目架构
-
-```
-plex-playlist-sync/
-├── backend/              # FastAPI 后端应用
-│   ├── api/              # REST API 端点
-│   ├── core/             # 核心配置和数据库
-│   ├── models/           # 数据模型
-│   ├── schemas/          # Pydantic 数据模式
-│   ├── services/         # 核心业务逻辑
-│   ├── utils/            # 工具函数
-│   └── main.py           # 应用入口
-├── web/                  # React 前端应用
-├── docs/                 # 项目文档
-└── docker-compose.yml    # Docker 部署配置
-```
+### 🗂️ 智能播放列表
+- **自动分类**：新下载的音乐会自动归类到对应播放列表
+- **双重保障**：下载完成后立即处理，或定期扫描确保不遗漏
 
 ## 🚀 快速开始
 
-### 环境要求
-- Git
-- Python 3.9+ 及 [uv](https://github.com/astral-sh/uv)
-- Node.js 和 npm
-- Docker (可选，用于容器化部署)
+最简单的使用方式是使用预构建的 Docker 镜像，只需要几个步骤即可完成安装和配置：
 
-### 安装步骤
+### 第一步：安装 Docker
 
-1. **克隆项目**：
-   ```bash
-   git clone https://github.com/nascloud/playlist-sync.git
-   cd playlist-sync
-   ```
+1. **Windows / Mac 用户**：下载并安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+2. **Linux 用户**：安装 Docker 
+   - Ubuntu/Debian: `sudo apt install docker.io`
+   - CentOS/RHEL: `sudo yum install docker`
 
-2. **配置环境变量**：
-   ```bash
-   cp backend/.env.example backend/.env
-   # 编辑 backend/.env 文件，填入必要配置
-   ```
+> **注意**：安装完成后请重启电脑，确保 Docker 服务已启动。
 
-3. **后端设置**：
-   ```bash
-   cd backend
-   uv sync
-   uv run alembic upgrade head
-   ```
+### 第二步：创建项目文件夹
 
-4. **前端设置**：
-   ```bash
-   cd web
-   npm install
-   ```
+创建一个新的文件夹（例如：D:/playlist-sync），然后在该文件夹内创建一个名为 `docker-compose.yml` 的文件，内容如下：
 
-### 启动应用
+```yaml
+services:
+  playlist_sync-app:
+    image: econome/playlist-sync-app
+    container_name: playlist_sync-app
+    dns:
+      - 223.5.5.5
+      - 114.114.114.114
+    ports:
+      - "5173:3001"
+    restart: always
+    networks:
+      - app-network
+    volumes:
+      # 挂载数据库文件以实现数据持久化
+      - ./data:/usr/src/app/data
+      # 挂载日志目录
+      - ./logs:/usr/src/app/logs
+      # 挂载下载目录
+      - ./downloads:/usr/src/app/Downloads
+    env_file:
+      - ./.env
 
-#### 开发模式
-```bash
-# 后端 (在 backend 目录)
-uvicorn main:app --reload --host 0.0.0.0 --port 3001
-
-# 前端 (在 web 目录)
-npm run dev
+networks:
+  app-network:
+    driver: bridge
 ```
 
-#### 生产模式 (Docker)
-```bash
-docker-compose up --build
+> **注意**：请根据你的实际路径修改上面的下载目录路径。示例中使用的是 `/vol3/1000/Media/音乐/plexdownloads`，请将其修改为你想存放音乐的路径。
+
+### 第三步：配置设置
+
+1. 在项目文件夹中创建一个名为 `.env` 的文件（注意前面有个点）
+2. 用文本编辑器（如记事本）打开 `.env` 文件
+3. 添加并修改以下配置：
+
+```
+PLEX_URL=你的Plex服务器地址
+PLEX_TOKEN=你的Plex访问令牌
+APP_PASSWORD=设置一个登录密码
+DOWNLOAD_PATH=Downloads
 ```
 
-### 数据库管理
+详细说明：
+   - `PLEX_URL`: 你的 Plex 服务器地址（例如：http://192.168.1.100:32400）
+   - `PLEX_TOKEN`: 你的 Plex 访问令牌（获取方法见下方 "重要配置说明"）
+   - `APP_PASSWORD`: 设置一个登录密码（例如：mypass123）
+   - `DOWNLOAD_PATH`: Docker容器内的下载路径（保持默认值即可）
 
-项目使用SQLite数据库，并将数据库文件存储在 `backend/data/` 目录中以便持久化。Docker配置已设置为挂载整个数据目录，这可以确保：
-- 数据库文件和WAL临时文件都在同一挂载点
-- 防止因容器重启导致的数据库损坏
-- 实现数据的持久化保存
+### 第四步：启动服务
 
-## 🛠️ 核心服务
+1. 打开命令行工具：
+   - Windows 用户：按 Win+R，输入 `cmd`，回车
+   - Mac/Linux 用户：打开终端
 
-### PlaylistService
-负责从音乐平台解析歌单信息，支持：
-- 网易云音乐歌单解析
-- QQ音乐歌单解析（含信息补全）
+2. 切换到项目目录（例如，如果项目在 D:/playlist-sync）：
+   ```bash
+   cd D:/playlist-sync
+   ```
 
-### DownloadService
-提供完整的下载功能：
-- 三种下载触发方式
-- 并发下载控制
-- 下载队列管理
-- 错误处理和重试机制
+3. 启动服务（首次运行会下载镜像，可能需要几分钟）：
+   ```bash
+   docker-compose up -d
+   ```
 
-### AutoPlaylistService
-智能播放列表管理：
-- 新音乐自动归类
-- 智能匹配算法
-- 双重触发机制
+4. 等待服务启动完成，访问 `http://localhost:5173` 即可开始使用
 
-### PlexService
-与 Plex 媒体服务器交互：
-- 音乐库管理
-- 播放列表创建/更新
-- 媒体扫描触发
+> **小提示**：如果不想看实时日志，使用 `docker-compose up -d`（后台运行）；如果想看实时日志，使用 `docker-compose up`
 
-## 📊 数据模型
+### 第五步：开始同步
 
-### 任务管理 (tasks)
-- 歌单同步任务
-- 定时调度配置
-- 同步状态跟踪
+1. 打开浏览器，访问 `http://localhost:5173`
+2. 使用你在 `.env` 中设置的密码登录
+3. 添加歌单链接（从网易云音乐或 QQ 音乐复制分享链接）
+4. 点击同步，系统会自动查找并下载缺失的歌曲
+5. 等待同步完成，音乐将自动出现在你的 Plex 播放列表中
 
-### 下载管理
-- 下载设置 (download_settings)
-- 下载队列 (download_queue)
-- 下载会话 (download_sessions)
+## 🔧 重要配置说明
 
-## 🔧 配置说明
+### 如何获取 Plex Token
+1. 在浏览器中打开你的 Plex 服务器地址（例如：http://192.168.1.100:32400）
+2. 登录到 Plex Web 界面
+3. 按 F12 打开浏览器的开发者工具
+4. 点击 Network（网络）标签
+5. 刷新页面，在请求列表中找到任意一个请求，查看 Headers（请求头）
+6. 找到 "X-Plex-Token" 或 "X-Plex-Token="，复制后面的值
 
-### 必需配置
-- `SECRET_KEY`：应用安全密钥
-- `APP_PASSWORD`：Web界面登录密码
-- `PLEX_URL`：Plex服务器地址
-- `PLEX_TOKEN`：Plex访问令牌
+### Docker 数据持久化
+- 数据库文件和下载的音乐将保存在项目目录下的 `./data` 和 `./logs` 中
+- 即使删除容器，数据也不会丢失
+- 备份时只需备份整个项目目录
 
-### 下载配置
-- `DOWNLOADER_API_KEY`：下载器API密钥
-- `DOWNLOAD_PATH`：下载文件存储路径
-- `preferred_quality`：首选音质
-- `max_concurrent_downloads`：最大并发下载数
+### 下载路径映射
+- 容器内的 `/usr/src/app/Downloads` 目录会映射到你在 `docker-compose.yml` 中指定的主机路径
+- 确保映射的主机路径存在且有写入权限
 
-## 🎯 使用指南
+## ❓ 常见问题解答
 
-### 1. 创建同步任务
-1. 在Web界面添加新任务
-2. 输入歌单URL
-3. 配置同步计划
+### Q: 为什么有些歌曲下载不了？
+A: 可能是因为：
+- 歌曲在源平台已下架
+- 版权问题，无法下载
+- 网络连接问题，稍后重试即可
 
-### 2. 下载缺失歌曲
-1. 查看任务详情中的缺失歌曲列表
-2. 选择下载方式：
-   - 点击"下载全部缺失"按钮
-   - 点击单个歌曲的"下载"按钮
-   - 启用自动下载功能
+### Q: 同步后音乐没出现在 Plex 中？
+A: 请检查：
+- Plex 服务器是否正常运行
+- 音乐下载路径是否正确设置（需要设置为Plex库的音乐目录）
+- Plex 是否开启了自动扫描功能（在 Plex 设置中启用）
 
-### 3. 智能播放列表
-系统会自动将新下载的音乐归类到对应播放列表，无需手动操作。
+### Q: 如何停止服务？
+A: 在项目目录下运行：
+```bash
+docker-compose down
+```
 
-## 📚 技术文档
+### Q: 如何更新到最新版本？
+A: 
+1. 停止当前服务：`docker-compose down`
+2. 拉取最新镜像：`docker pull econome/playlist-sync-app`
+3. 重新启动服务：`docker-compose up -d`
 
-详细技术文档请参阅 [docs](./docs) 目录：
+### Q: 如何查看服务日志？
+A: 在项目目录下运行：
+```bash
+docker-compose logs -f
+```
 
-- [智能播放列表功能设计](./docs/auto_playlist_feature.md)
-- [下载功能完整设计](./docs/download_feature_design.md)
-- [QQ音乐歌单解析增强](./docs/qq_playlist_enhancement.md)
-- [QQ音乐信息补全](./docs/qq_info_enrichment_during_download.md)
-- [字符串标准化和匹配优化](./docs/string_normalization_and_matching_fix.md)
+### Q: 端口 5173 被占用怎么办？
+A: 修改 `docker-compose.yml` 文件中的端口映射，例如改为 "5174:3001"，然后通过 `http://localhost:5174` 访问。
 
-## 🤝 贡献指南
+## 🤝 如何寻求帮助
 
-欢迎参与贡献！请遵循以下步骤：
+如果你在使用过程中遇到问题：
 
-1. Fork 本仓库
-2. 创建功能分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 开启 Pull Request
+1. 查看 [GitHub Issues](https://github.com/nascloud/playlist-sync/issues) 是否有类似问题
+2. 如果没有找到解决方案，可以创建一个新的 Issue
+3. 描述问题时请提供详细的错误信息和复现步骤
 
-## 📄 许可证
+## 📄 开源许可证
 
-本项目采用 MIT 许可证。详情请参阅 [LICENSE](./LICENSE) 文件。
-
-## 🆘 支持
-
-如遇到问题，请：
-1. 查看 [Issues](https://github.com/nascloud/playlist-sync/issues)
-2. 创建新的 Issue 描述问题
-3. 提供详细的错误信息和复现步骤
+本项目采用 MIT 许可证，欢迎使用和修改。

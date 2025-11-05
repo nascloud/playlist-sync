@@ -1,28 +1,25 @@
-version: '3.8'
-
 services:
   playlist_sync-app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: econome/playlist-sync-app
     container_name: playlist_sync-app
+    dns:
+      - 223.5.5.5
+      - 114.114.114.114
     ports:
-      - "3001:3001"
-    restart: unless-stopped
+      - "5173:3001"
+    restart: always
     networks:
-      - app-network
+      - playlist_sync
     volumes:
-      # 挂载数据目录以实现数据持久化（包含数据库文件及WAL文件等）
-      - ./backend/data:/usr/src/app/data
+      # 挂载数据库文件以实现数据持久化
+      - ./data:/usr/src/app/data
       # 挂载日志目录
-      - ./backend/logs:/usr/src/app/logs
+      - ./logs:/usr/src/app/logs
       # 挂载下载目录
-      - ./backend/Downloads:/usr/src/app/Downloads
-    # 从 backend 目录下的 .env 文件加载环境变量
-    # 这使得配置与代码分离，并且便于管理密钥
+      - ./downloads:/usr/src/app/Downloads
     env_file:
-      - ./backend/.env
+      - ./.env
 
 networks:
-  app-network:
+  playlist_sync:
     driver: bridge
