@@ -40,6 +40,14 @@ docs/AIAPI.md
 # Build artifacts
 web/dist/
 
+# Frontend source artifacts
+# Ignore JS files that are generated from TS/TSX files
+web/src/components/*.js
+web/src/pages/*.js
+web/src/lib/*.js
+web/src/hooks/*.js
+web/src/utils/*.js
+
 # Test scripts
 scripts/test_*.py
 unmatched.json
